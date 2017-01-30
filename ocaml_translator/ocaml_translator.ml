@@ -9,6 +9,7 @@ let echo message = Printf.printf  message ^ "\n"
 
 let add x y = Arithmetic.mk_add context [x;y]
 let intSort () = Arithmetic.Integer.mk_sort context
+let intValue n = Symbol.mk_int n
 
 let bitVecValue value size = BitVector.mk_numeral context (string_of_int value) size
 let bitVecSort size = BitVector.mk_sort context size
@@ -25,14 +26,16 @@ let extract high low bv = BitVector.mk_extract context high low bv
 let arraySort index_sort store_sort = Z3Array.mk_sort context index_sort store_sort
 let select arr index = Z3Array.mk_select context arr index
 
-let enumSort name enums = Enumeration.mk_sort context name enums
+let enumSort name enums = Enumeration.mk_sort_s context name enums
+let enumAt enum i = Enumeration.get_const enum i
 
 let equals x y = Boolean.mk_eq context x y
 let and_log clauses = Boolean.mk_and context clauses
 let or_log clauses = Boolean.mk_or context clauses
-let not_log x y = Boolean.mk_not context x 
+let not_log x = Boolean.mk_not context x 
 let ite cond t f = Boolean.mk_ite context cond t f
 
+let freshConst name typ = Expr.mk_fresh_const context name typ
 let declareConst name typ = Expr.mk_const context name typ
 let symbol name = Symbol.mk_string context name
 
@@ -40,97 +43,144 @@ let checkSat solver = Solver.check solver []
 let getModel () = Solver.get_model solver
 
 let _ =
-	let op_sym = symbol "Operation" in
-	let op_add = symbol "ADD" in
-	let op_sub = symbol "SUB" in
-	let op_mov = symbol "MOV" in
-	let op_mvn = symbol "MVN" in
-	let op_cmp = symbol "CMP" in
-	let op_and = symbol "AND" in
-
-	let cond_sym = symbol "Condition" in
-	let cond_eq = symbol "EQ" in
-	let cond_ne = symbol "NE" in
-	let cond_cs = symbol "CS" in
-	let cond_cc = symbol "CC" in
-	let cond_mi = symbol "MI" in
-	let cond_pl = symbol "PL" in
-	let cond_vs = symbol "VS" in
-	let cond_vc = symbol "VC" in
-	let cond_hi = symbol "HI" in
-	let cond_ls = symbol "LS" in
-	let cond_ge = symbol "GE" in
-	let cond_lt = symbol "LT" in
-	let cond_gt = symbol "GT" in
-	let cond_le = symbol "LE" in
-	let cond_al = symbol "AL" in
-
-	let flag_sym = symbol "Flag" in
-	let flag_N = symbol "N" in
-	let flag_S = symbol "S" in
-
-	let reg_sym = symbol "Register" in
-	let reg_R0 = symbol "R0" in
-	let reg_R1 = symbol "R1" in
-	let reg_R2 = symbol "R2" in
-	let reg_R3 = symbol "R3" in
-	let reg_R4 = symbol "R4" in
-	let reg_R5 = symbol "R5" in
-	let reg_R6 = symbol "R6" in
-	let reg_R7 = symbol "R7" in
-	let reg_R8 = symbol "R8" in
-	let reg_R9 = symbol "R9" in
-	let reg_R10 = symbol "R10" in
-	let reg_R11 = symbol "R11" in
-	let reg_R12 = symbol "R12" in
-	let reg_SP = symbol "SP" in
-	let reg_LR = symbol "LR" in
-	let reg_PC = symbol "PC" in
-	let reg_CPSR = symbol "CPSR" in
-
-	let barrel_op_sym = symbol "BarrelOp"in
-	let barrel_op_LSL = symbol "LSL" in
-	let barrel_op_LSR = symbol "LSR" in
-	let barrel_op_ASR = symbol "ASR" in
-
-	let pre = symbol "pre" in
-	let post = symbol "post" in
-	let oper = symbol "oper" in
-	let cond = symbol "cond" in
-	let flag = symbol "flag" in
-	let rd = symbol "rd" in
-	let rn = symbol "rn" in
-	let ro = symbol "ro" in
-	let imm = symbol "imm" in
-	let imm_used = symbol "imm_used" in
-	let barrel_op = symbol "barrel_op" in
-	let barrel_num = symbol "barrel_num" in
-
+	
+	Printf.printf "Generating ARM Constraints\n";
 	let int_sort = intSort () in
+	let b1 = bitVecValue 1 1 in 
+	let b0 = bitVecValue 0 1 in
 
-	let operation = enumSort op_sym [op_add; op_sub; op_mov; op_mvn; op_cmp; op_and] in
-	let condition = enumSort cond_sym [
-		cond_eq; cond_ne; cond_cs; cond_cc; 
-		cond_mi; cond_pl; cond_vs; cond_vc; cond_hi; cond_ls; 
-		cond_ge; cond_lt; cond_gt; cond_le; cond_al] in 
-	let flag = enumSort flag_sym [flag_N; flag_S] in
-	let barrel_op = enumSort barrel_op_sym [barrel_op_LSL; barrel_op_LSR; barrel_op_ASR] in
-	let register = enumSort reg_sym [
-		reg_R0; reg_R1; reg_R2; reg_R3; reg_R4; reg_R5; reg_R6;
-		reg_R7; reg_R8; reg_R9; reg_R10; reg_R11; reg_R12; 
-		reg_SP; reg_LR; reg_PC; reg_CPSR] in
+	let operation = enumSort "Operation" ["ADD"; "SUB"; "MOV"; "MVN"; "CMP"; "AND"] in
+	let condition = enumSort "Condition" [
+		"EQ"; "NE"; "CS"; "CC"; "MI"; 
+		"PL"; "VS"; "VC"; "HI"; "LS"; 
+		"GE"; "LT"; "GT"; "LE"; "AL"] in 
+	let flag = enumSort "Flag" ["N"; "S"] in
+	let barrel_op = enumSort "BarrelOp" ["LSL"; "LSR"; "ASR"] in
+	let register = enumSort "Register" [
+		"R0"; "R1"; "R2"; "R3"; "R4"; "R5";
+		"R6"; "R7"; "R8"; "R9"; "R10"; "R11"; 
+		"R12"; "SP"; "LR"; "PC"; "CPSR"] in
+
+	let opADD = enumAt operation 0 in
+	let opSUB = enumAt operation 1 in
+	let opMOV = enumAt operation 2 in
+	let opMVN = enumAt operation 3 in
+	let opCMP = enumAt operation 4 in
+	let opAND = enumAt operation 5 in
+
+	let cEQ = enumAt condition 0 in
+	let cNE = enumAt condition 1 in
+	let cCS = enumAt condition 2 in
+	let cCC = enumAt condition 3 in
+	let cMI = enumAt condition 4 in
+	let cPL = enumAt condition 5 in
+	let cVS = enumAt condition 6 in
+	let cVC = enumAt condition 7 in
+	let cHI = enumAt condition 8 in
+	let cLS = enumAt condition 9 in
+	let cGE = enumAt condition 10 in
+	let cLT = enumAt condition 11 in
+	let cGT = enumAt condition 12 in
+	let cLE = enumAt condition 13 in
+	let cAL = enumAt condition 14 in
+
+	let fN = enumAt flag 0 in
+	let fS = enumAt flag 1 in
+
+	let bLSL = enumAt barrel_op 0 in
+	let bLSR = enumAt barrel_op 1 in
+	let bASR = enumAt barrel_op 2 in 
+
+	let r0 =  enumAt register 0 in 
+	let r1 =  enumAt register 1 in 
+	let r2 =  enumAt register 2 in 
+	let r3 =  enumAt register 3 in 
+	let r4 =  enumAt register 4 in 
+	let r5 =  enumAt register 5 in 
+	let r6 =  enumAt register 6 in 
+	let r7 =  enumAt register 7 in 
+	let r8 =  enumAt register 8 in 
+	let r9 =  enumAt register 9 in 
+	let r10 =  enumAt register 10 in 
+	let r11 =  enumAt register 11 in 
+	let r12 =  enumAt register 12 in
+	let sp =  enumAt register 13 in 
+	let lr =  enumAt register 14 in 
+	let pc =  enumAt register 15 in  
+	let cpsr =  enumAt register 16 in 
+
 
 	let state = arraySort register (bitVecSort 32) in
 	let sequence = arraySort int_sort state in
-
-	(*let condition_true = 
+	
+	let condition_true pre cond = 
 		(
 			or_log [
-				(and_log [(equals condition cond_eq); (equals (extract 30 30 (select pre reg_CPSR)) (bitVecValue 1 1))])
+				(and_log [(equals cond cEQ); (equals (extract 30 30 (select pre cpsr)) b1)]);
+				(and_log [(equals cond cNE); (equals (extract 30 30 (select pre cpsr)) b0)]);
+				(and_log [(equals cond cCS); (equals (extract 29 29 (select pre cpsr)) b1)]);
+				(and_log [(equals cond cCC); (equals (extract 29 29 (select pre cpsr)) b0)]);
+				(and_log [(equals cond cMI); (equals (extract 31 31 (select pre cpsr)) b1)]);
+				(and_log [(equals cond cPL); (equals (extract 31 31 (select pre cpsr)) b0)]);
+				(and_log [(equals cond cVS); (equals (extract 30 30 (select pre cpsr)) b1)]);
+				(and_log [(equals cond cVC); (equals (extract 30 30 (select pre cpsr)) b0)]);
+				(and_log [ 
+					(equals cond cGT); (and_log [
+						(equals (extract 30 30 (select pre cpsr)) b0);
+						(equals (equals (extract 31 31 (select pre cpsr)) b1) (equals (extract 28 28 (select pre cpsr)) b1))
+					])
+				]);
+				(and_log [ 
+					(equals cond cLE); (and_log [
+						(equals (extract 30 30 (select pre cpsr)) b1);
+						(not_log (equals (equals (extract 31 31 (select pre cpsr)) b1) (equals (extract 28 28 (select pre cpsr)) b1)))
+					])
+				]);
+				(equals cond cAL)
 			]
-		) in*)
+		) in
 
-	Printf.printf "lol\n";
+	let condition_false pre cond = (not_log (condition_true pre cond)) in
+
+	let r0_to_lr_equal pre post =
+		(and_log [
+			(equals (select pre r0) (select post r0));
+			(equals (select pre r1) (select post r1));
+			(equals (select pre r2) (select post r2));
+			(equals (select pre r3) (select post r3));
+			(equals (select pre r4) (select post r4));
+			(equals (select pre r5) (select post r5));
+			(equals (select pre r6) (select post r6));
+			(equals (select pre r7) (select post r7));
+			(equals (select pre r8) (select post r8));
+			(equals (select pre r9) (select post r9));
+			(equals (select pre r10) (select post r10));
+			(equals (select pre r11) (select post r11));
+			(equals (select pre r12) (select post r12));
+			(equals (select pre sp) (select post sp));
+			(equals (select pre lr) (select post lr));
+		]) in
+
+	let r0_to_lr_equal_except pre post rd =
+		(and_log [
+			(or_log [(equals (select pre r0) (select post r0)); (equals rd r0)]);
+			(or_log [(equals (select pre r1) (select post r1)); (equals rd r1)]);
+			(or_log [(equals (select pre r2) (select post r2)); (equals rd r2)]);
+			(or_log [(equals (select pre r3) (select post r3)); (equals rd r3)]);
+			(or_log [(equals (select pre r4) (select post r4)); (equals rd r4)]);
+			(or_log [(equals (select pre r5) (select post r5)); (equals rd r5)]);
+			(or_log [(equals (select pre r6) (select post r6)); (equals rd r6)]);
+			(or_log [(equals (select pre r7) (select post r7)); (equals rd r7)]);
+			(or_log [(equals (select pre r8) (select post r8)); (equals rd r8)]);
+			(or_log [(equals (select pre r9) (select post r9)); (equals rd r9)]);
+			(or_log [(equals (select pre r10) (select post r10)); (equals rd r10)]);
+			(or_log [(equals (select pre r11) (select post r11)); (equals rd r11)]);
+			(or_log [(equals (select pre r12) (select post r12)); (equals rd r12)]);
+			(or_log [(equals (select pre sp) (select post sp)); (equals rd sp)]);
+			(or_log [(equals (select pre lr) (select post lr)); (equals rd lr)]);
+		]) in
+
+	Printf.printf "Finished\n";
 	exit 0
 
 
