@@ -1,0 +1,2 @@
+#!/bin/sh
+ocamlfind ocamlopt -o ocaml_translator ocaml_translator.ml -package Z3 -linkpkg -thread
