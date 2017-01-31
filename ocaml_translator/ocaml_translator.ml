@@ -1,15 +1,18 @@
 
 open Z3
 
+exception TestFailedException of string
+
 let config = [("model", "true"); ("proof", "false")]
 let context = Z3.mk_context config
-let solver = Solver.mk_solver context None
 
 let echo message = Printf.printf  message ^ "\n" 
 
 let add x y = Arithmetic.mk_add context [x;y]
 let intSort () = Arithmetic.Integer.mk_sort context
-let intValue n = Symbol.mk_int n
+let intValue n = Expr.mk_numeral_int context n (intSort ())
+
+let boolSort () = Boolean.mk_sort context
 
 let bitVecValue value size = BitVector.mk_numeral context (string_of_int value) size
 let bitVecSort size = BitVector.mk_sort context size
@@ -35,17 +38,19 @@ let or_log clauses = Boolean.mk_or context clauses
 let not_log x = Boolean.mk_not context x 
 let ite cond t f = Boolean.mk_ite context cond t f
 
-let freshConst name typ = Expr.mk_fresh_const context name typ
-let declareConst name typ = Expr.mk_const context name typ
 let symbol name = Symbol.mk_string context name
+let freshConst name typ = Expr.mk_fresh_const context name typ
+let const name typ = Expr.mk_const context (symbol name) typ
 
+let solverAdd solver constraints = Solver.add solver constraints
 let checkSat solver = Solver.check solver [] 
-let getModel () = Solver.get_model solver
+let getModel solver = Solver.get_model solver
 
-let _ =
+let armConstraints num =
 	
 	Printf.printf "Generating ARM Constraints\n";
 	let int_sort = intSort () in
+	let bool_sort = boolSort () in 
 	let b1 = bitVecValue 1 1 in 
 	let b0 = bitVecValue 0 1 in
 
@@ -112,8 +117,10 @@ let _ =
 
 	let state = arraySort register (bitVecSort 32) in
 	let sequence = arraySort int_sort state in
+
+	let seq = const "seq" sequence in
 	
-	let condition_true pre cond = 
+	let conditionTrue pre cond = 
 		(
 			or_log [
 				(and_log [(equals cond cEQ); (equals (extract 30 30 (select pre cpsr)) b1)]);
@@ -140,9 +147,9 @@ let _ =
 			]
 		) in
 
-	let condition_false pre cond = (not_log (condition_true pre cond)) in
+	let conditionFalse pre cond = (not_log (conditionTrue pre cond)) in
 
-	let r0_to_lr_equal pre post =
+	let r0ToLrEqual pre post =
 		(and_log [
 			(equals (select pre r0) (select post r0));
 			(equals (select pre r1) (select post r1));
@@ -161,7 +168,7 @@ let _ =
 			(equals (select pre lr) (select post lr));
 		]) in
 
-	let r0_to_lr_equal_except pre post rd =
+	let r0ToLrEqualExcept pre post rd =
 		(and_log [
 			(or_log [(equals (select pre r0) (select post r0)); (equals rd r0)]);
 			(or_log [(equals (select pre r1) (select post r1)); (equals rd r1)]);
@@ -180,8 +187,132 @@ let _ =
 			(or_log [(equals (select pre lr) (select post lr)); (equals rd lr)]);
 		]) in
 
+	let generateContraints num = 
+		let pre = select seq (intValue num) in
+		let post = select seq (intValue (num + 1)) in
+		let oper = const "oper" operation in 
+		let cond = const "cond" condition in
+		let flag = const "flag" flag in 
+		let rd = const "rd" register in 
+		let rn = const "rn" register in
+		let ro = const "ro" register in 
+		let imm = const "imm" register in 
+		let imm_used = const "imm_used" bool_sort in 
+		let barrel_op = const "barrel_op" barrel_op in 
+		let barrel_num = const "barrel_num" (bitVecSort 32) in
+
+		let rd_val = select post rd in
+		let rn_val = select pre rn in
+		let flex_val = select pre ro in
+
+		let condition_true = conditionTrue pre cond in
+		let condition_false = conditionFalse pre cond in 
+		let r0_to_lr_equal = r0ToLrEqual pre post in 
+		let r0_to_lr_equal_except = r0ToLrEqualExcept pre post rd in 
+		
+		let constraints = (and_log [
+			(equals (bitVecAdd (select pre pc) (bitVecValue 4 32)) (select post pc));
+			(or_log [
+				(and_log [condition_false; r0_to_lr_equal]);
+
+				(and_log [
+					condition_true;
+					(or_log [
+						(and_log [
+							r0_to_lr_equal;
+							(or_log [(equals oper opCMP)]);
+							(and_log [
+								(or_log [
+									(not_log (equals oper opCMP));
+									(and_log [
+										(or_log [
+											(not_log (equals rn_val flex_val));
+											(equals (extract 30 30 (select post cpsr)) b1)
+										]);
+										(or_log [
+											(not_log (equals rn_val flex_val));
+											(equals (extract 30 30 (select post cpsr)) b1)
+										])
+									])
+								])
+							])
+						]);
+						(and_log [
+							r0_to_lr_equal_except;
+							(or_log [
+								(and_log [
+									(or_log [(equals oper opMOV); (equals oper opMVN)]);
+									(or_log [
+										(not_log (equals oper opMOV));
+										(equals rd_val flex_val)
+									]);
+									(or_log [
+										(not_log (equals oper opMVN));
+										(equals rd_val (bitVecNot flex_val) )
+									])
+								]);
+								(and_log [
+									(or_log [
+										(equals oper opADD); (equals oper opSUB); (equals oper opAND)
+									]);
+									(or_log [
+										(not_log (equals oper opADD));
+										(equals rd_val (bitVecAdd (select pre rn) flex_val));
+									]);
+									(or_log [
+										(not_log (equals oper opSUB));
+										(equals rd_val (bitVecSub (select pre rn) flex_val));
+									]);
+									(or_log [
+										(not_log (equals oper opAND));
+										(equals rd_val (bitVecAnd (select pre rn) flex_val));
+									])
+								])
+							]);
+							(or_log [
+								(and_log [
+									(equals flag fN);
+									(equals (select post cpsr) (select pre cpsr))
+								]);
+								(and_log [
+									(equals flag fS);
+									(or_log [
+										(not_log (equals rd_val (bitVecValue 0 32)));
+										(equals (extract 30 30 (select post cpsr)) b1)
+									]);
+									(or_log [
+										(not_log (equals rd_val (bitVecValue 0 32)));
+										(equals (extract 30 30 (select post cpsr)) b0)
+									])
+								])
+							])
+						]);
+					
+					])
+				])
+			])
+			
+		]) in 
+		constraints
+	in
+
+	let constraints = generateContraints num in 
+	let solver = Solver.mk_solver context None in
+	solverAdd solver [constraints]; 
+	let result = checkSat solver in
+	if result != SATISFIABLE then 
+		Printf.printf "UNSAT"
+	else let model = getModel solver in
+	match model with
+	| None -> Printf.printf "NO MODEL"
+	| Some (model) ->
+		Printf.printf "Solver says: %s\n" (Solver.string_of_status result) ;
+	  	Printf.printf "Model: \n%s\n" (Model.to_string model) ;
+
 	Printf.printf "Finished\n";
 	exit 0
+
+let main = armConstraints 7
 
 
 
