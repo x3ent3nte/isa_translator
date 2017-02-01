@@ -26,6 +26,9 @@ let bitVecArithShiftRight bv shifts = BitVector.mk_ashr context bv shifts
 let bitVecLogicShiftRight bv shifts = BitVector.mk_lshr context bv shifts
 let extract high low bv = BitVector.mk_extract context high low bv
 
+let makeConstructor name symbol symbols options ints = Datatype.mk_constructor_s context name symbol symbols options ints
+let makeDatatype name constructors = Datatype.mk_sort_s context name constructors
+let recordSort name symbol symbols options ints = makeDatatype name [(makeConstructor name symbol symbols options ints)]
 let arraySort index_sort store_sort = Z3Array.mk_sort context index_sort store_sort
 let select arr index = Z3Array.mk_select context arr index
 
@@ -114,9 +117,18 @@ let armConstraints num =
 	let pc =  enumAt register 15 in  
 	let cpsr =  enumAt register 16 in 
 
-
 	let state = arraySort register (bitVecSort 32) in
 	let sequence = arraySort int_sort state in
+
+	
+	let instruction = recordSort "Instruction" (symbol "Instruction") [
+		(symbol "operx"); (symbol "condx"); (symbol "flagx"); (symbol "rdx"); (symbol "rnx"); (symbol "rox"); 
+		(symbol "immx"); (symbol "imm_usedx"); (symbol "barrel_opx"); (symbol "barrel_numx");
+		] [
+			Some operation; Some condition; Some flag; Some register; Some register; Some register; Some (bitVecSort 12); Some bool_sort; Some barrel_op; Some (bitVecSort 32)
+		] [0;1;2;3;4;5;6;7;8;9] in
+
+	let program = arraySort int_sort instruction in
 
 	let seq = const "seq" sequence in
 	
@@ -212,9 +224,10 @@ let armConstraints num =
 		
 		let constraints = (and_log [
 			(equals (bitVecAdd (select pre pc) (bitVecValue 4 32)) (select post pc));
+			(equals (select pre pc) (bitVecValue 4 32));
+			(equals (select post pc) (bitVecValue 9 32));
 			(or_log [
 				(and_log [condition_false; r0_to_lr_equal]);
-
 				(and_log [
 					condition_true;
 					(or_log [
