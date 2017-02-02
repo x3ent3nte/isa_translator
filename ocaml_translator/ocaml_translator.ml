@@ -49,6 +49,20 @@ let solverAdd solver constraints = Solver.add solver constraints
 let checkSat solver = Solver.check solver [] 
 let getModel solver = Solver.get_model solver
 
+type instruction = 
+	{
+		operx : Expr.expr;
+		condx : Expr.expr;
+		flagx : Expr.expr;
+		rdx : Expr.expr;
+		rnx : Expr.expr;
+		rox : Expr.expr;
+		immx : Expr.expr;
+		imm_usedx : Expr.expr;
+		barrel_opx : Expr.expr;
+		barrel_numx : Expr.expr
+	}
+
 let armConstraints num =
 	
 	Printf.printf "Generating ARM Constraints\n";
@@ -120,18 +134,41 @@ let armConstraints num =
 	let state = arraySort register (bitVecSort 32) in
 	let sequence = arraySort int_sort state in
 
-	
+	let initialiseProgram num = 
+		let rec initialiseProgram n acc =
+			match n with
+			|0 -> acc
+			|_ -> initialiseProgram (n - 1) 
+			({
+				operx = (const ("oper_" ^ (string_of_int n)) operation);
+				condx = (const ("cond_" ^ (string_of_int n)) condition);
+				flagx = (const ("flag_" ^ (string_of_int n)) flag);
+				rdx = (const ("rd_" ^ (string_of_int n)) register);
+				rnx = (const ("rn_" ^ (string_of_int n)) register);
+				rox = (const ("ro_" ^ (string_of_int n)) register);
+				immx = (const ("imm_" ^ (string_of_int n)) (bitVecSort 12));
+				imm_usedx = (const ("imm_used_" ^ (string_of_int n)) bool_sort);
+				barrel_opx = (const ("barrel_op_" ^ (string_of_int n)) barrel_op);
+				barrel_numx = (const ("barrel_num_" ^ (string_of_int n)) (bitVecSort 32))
+			}::acc)
+		in 
+		initialiseProgram num [] in 
+(*
 	let instruction = recordSort "Instruction" (symbol "Instruction") [
 		(symbol "operx"); (symbol "condx"); (symbol "flagx"); (symbol "rdx"); (symbol "rnx"); (symbol "rox"); 
 		(symbol "immx"); (symbol "imm_usedx"); (symbol "barrel_opx"); (symbol "barrel_numx");
 		] [
-			Some operation; Some condition; Some flag; Some register; Some register; Some register; Some (bitVecSort 12); Some bool_sort; Some barrel_op; Some (bitVecSort 32)
+			Some operation; Some condition; Some flag; Some register; Some register; Some register; 
+			Some (bitVecSort 12); Some bool_sort; Some barrel_op; Some (bitVecSort 32)
 		] [0;1;2;3;4;5;6;7;8;9] in
-
 	let program = arraySort int_sort instruction in
 
 	let seq = const "seq" sequence in
-	
+	let prog = const "prog" program in
+	*)
+
+	let seq = const "seq" sequence in
+	let program = initialiseProgram num in
 	let conditionTrue pre cond = 
 		(
 			or_log [
@@ -198,120 +235,133 @@ let armConstraints num =
 			(or_log [(equals (select pre sp) (select post sp)); (equals rd sp)]);
 			(or_log [(equals (select pre lr) (select post lr)); (equals rd lr)]);
 		]) in
+	let generateContraints max =
+		let rec generateContraints num max constraints = 
+			if num = max then constraints 
+			else
+			let pre = select seq (intValue num) in
+			let post = select seq (intValue (num + 1)) in
+			(*
+			let instr = select prog (intValue num) in
+			let operd = List.nth (FuncDecl.get_parameters (List.nth (List.nth (Datatype.get_accessors instruction) 0) 0)) 0 in
+			*)
+			(*
+			let (instruction, rest) = match program with
+				| instr::tl -> (instr, tl) in
+			*)
+			let oper = const ("oper_" ^ (string_of_int num)) operation in 
+			let cond = const ("cond_" ^ (string_of_int num)) condition in
+			let flag = const ("flag_" ^ (string_of_int num)) flag in 
+			let rd = const ("rd_" ^ (string_of_int num)) register in 
+			let rn = const ("rn_" ^ (string_of_int num)) register in
+			let ro = const ("ro_" ^ (string_of_int num)) register in 
+			let imm = const ("imm_" ^ (string_of_int num)) register in 
+			let imm_used = const ("imm_used_" ^ (string_of_int num)) bool_sort in 
+			let barrel_op = const ("barrel_op_" ^ (string_of_int num)) barrel_op in 
+			let barrel_num = const ("barrel_num_" ^ (string_of_int num)) (bitVecSort 32) in
 
-	let generateContraints num = 
-		let pre = select seq (intValue num) in
-		let post = select seq (intValue (num + 1)) in
-		let oper = const "oper" operation in 
-		let cond = const "cond" condition in
-		let flag = const "flag" flag in 
-		let rd = const "rd" register in 
-		let rn = const "rn" register in
-		let ro = const "ro" register in 
-		let imm = const "imm" register in 
-		let imm_used = const "imm_used" bool_sort in 
-		let barrel_op = const "barrel_op" barrel_op in 
-		let barrel_num = const "barrel_num" (bitVecSort 32) in
+			let rd_val = select post rd in
+			let rn_val = select pre rn in
+			let flex_val = select pre ro in
 
-		let rd_val = select post rd in
-		let rn_val = select pre rn in
-		let flex_val = select pre ro in
-
-		let condition_true = conditionTrue pre cond in
-		let condition_false = conditionFalse pre cond in 
-		let r0_to_lr_equal = r0ToLrEqual pre post in 
-		let r0_to_lr_equal_except = r0ToLrEqualExcept pre post rd in 
-		
-		let constraints = (and_log [
-			(equals (bitVecAdd (select pre pc) (bitVecValue 4 32)) (select post pc));
-			(equals (select pre pc) (bitVecValue 4 32));
-			(equals (select post pc) (bitVecValue 9 32));
-			(or_log [
-				(and_log [condition_false; r0_to_lr_equal]);
-				(and_log [
-					condition_true;
-					(or_log [
-						(and_log [
-							r0_to_lr_equal;
-							(or_log [(equals oper opCMP)]);
+			let condition_true = conditionTrue pre cond in
+			let condition_false = conditionFalse pre cond in 
+			let r0_to_lr_equal = r0ToLrEqual pre post in 
+			let r0_to_lr_equal_except = r0ToLrEqualExcept pre post rd in 
+			
+			let constr = (and_log [
+				(equals (bitVecAdd (select pre pc) (bitVecValue 4 32)) (select post pc));
+				(or_log [
+					(and_log [condition_false; r0_to_lr_equal]);
+					(and_log [
+						condition_true;
+						(or_log [
 							(and_log [
-								(or_log [
-									(not_log (equals oper opCMP));
-									(and_log [
-										(or_log [
-											(not_log (equals rn_val flex_val));
-											(equals (extract 30 30 (select post cpsr)) b1)
-										]);
-										(or_log [
-											(not_log (equals rn_val flex_val));
-											(equals (extract 30 30 (select post cpsr)) b1)
+								r0_to_lr_equal;
+								(or_log [(equals oper opCMP)]);
+								(and_log [
+									(or_log [
+										(not_log (equals oper opCMP));
+										(and_log [
+											(or_log [
+												(not_log (equals rn_val flex_val));
+												(equals (extract 30 30 (select post cpsr)) b1)
+											]);
+											(or_log [
+												(not_log (equals rn_val flex_val));
+												(equals (extract 30 30 (select post cpsr)) b1)
+											])
 										])
 									])
 								])
-							])
-						]);
-						(and_log [
-							r0_to_lr_equal_except;
-							(or_log [
-								(and_log [
-									(or_log [(equals oper opMOV); (equals oper opMVN)]);
-									(or_log [
-										(not_log (equals oper opMOV));
-										(equals rd_val flex_val)
+							]);
+							(and_log [
+								r0_to_lr_equal_except;
+								(or_log [
+									(and_log [
+										(or_log [(equals oper opMOV); (equals oper opMVN)]);
+										(or_log [
+											(not_log (equals oper opMOV));
+											(equals rd_val flex_val)
+										]);
+										(or_log [
+											(not_log (equals oper opMVN));
+											(equals rd_val (bitVecNot flex_val) )
+										])
 									]);
-									(or_log [
-										(not_log (equals oper opMVN));
-										(equals rd_val (bitVecNot flex_val) )
+									(and_log [
+										(or_log [
+											(equals oper opADD); (equals oper opSUB); (equals oper opAND)
+										]);
+										(or_log [
+											(not_log (equals oper opADD));
+											(equals rd_val (bitVecAdd (select pre rn) flex_val));
+										]);
+										(or_log [
+											(not_log (equals oper opSUB));
+											(equals rd_val (bitVecSub (select pre rn) flex_val));
+										]);
+										(or_log [
+											(not_log (equals oper opAND));
+											(equals rd_val (bitVecAnd (select pre rn) flex_val));
+										])
 									])
 								]);
-								(and_log [
-									(or_log [
-										(equals oper opADD); (equals oper opSUB); (equals oper opAND)
+								(or_log [
+									(and_log [
+										(equals flag fN);
+										(equals (select post cpsr) (select pre cpsr))
 									]);
-									(or_log [
-										(not_log (equals oper opADD));
-										(equals rd_val (bitVecAdd (select pre rn) flex_val));
-									]);
-									(or_log [
-										(not_log (equals oper opSUB));
-										(equals rd_val (bitVecSub (select pre rn) flex_val));
-									]);
-									(or_log [
-										(not_log (equals oper opAND));
-										(equals rd_val (bitVecAnd (select pre rn) flex_val));
+									(and_log [
+										(equals flag fS);
+										(or_log [
+											(not_log (equals rd_val (bitVecValue 0 32)));
+											(equals (extract 30 30 (select post cpsr)) b1)
+										]);
+										(or_log [
+											(not_log (equals rd_val (bitVecValue 0 32)));
+											(equals (extract 30 30 (select post cpsr)) b0)
+										])
 									])
 								])
 							]);
-							(or_log [
-								(and_log [
-									(equals flag fN);
-									(equals (select post cpsr) (select pre cpsr))
-								]);
-								(and_log [
-									(equals flag fS);
-									(or_log [
-										(not_log (equals rd_val (bitVecValue 0 32)));
-										(equals (extract 30 30 (select post cpsr)) b1)
-									]);
-									(or_log [
-										(not_log (equals rd_val (bitVecValue 0 32)));
-										(equals (extract 30 30 (select post cpsr)) b0)
-									])
-								])
-							])
-						]);
-					
+						
+						])
 					])
 				])
-			])
-			
-		]) in 
-		constraints
+				
+			]) in 
+			generateContraints (num + 1) max (constr::constraints)
+		in
+		generateContraints 0 max []
 	in
 
 	let constraints = generateContraints num in 
+	(*
+	let more = [(equals (select (select seq (intValue 0)) pc) (bitVecValue 4 32));
+				(equals (select (select seq (intValue 2)) pc) (bitVecValue 13 32)); ] in *)
 	let solver = Solver.mk_solver context None in
-	solverAdd solver [constraints]; 
+	solverAdd solver constraints; 
 	let result = checkSat solver in
 	if result != SATISFIABLE then 
 		Printf.printf "UNSAT"
