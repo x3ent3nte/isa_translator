@@ -24,6 +24,7 @@ let bitVecConcat x y = BitVector.mk_concat context x y
 let bitVecShiftLeft bv shifts = BitVector.mk_shl context bv shifts
 let bitVecArithShiftRight bv shifts = BitVector.mk_ashr context bv shifts
 let bitVecLogicShiftRight bv shifts = BitVector.mk_lshr context bv shifts
+let bitVecRotateRight bv rotates = BitVector.mk_ext_rotate_right context bv rotates
 let extract high low bv = BitVector.mk_extract context high low bv
 
 let makeConstructor name symbol symbols options ints = Datatype.mk_constructor_s context name symbol symbols options ints
@@ -255,14 +256,20 @@ let armConstraints num =
 			let rd = const ("rd_" ^ (string_of_int num)) register in 
 			let rn = const ("rn_" ^ (string_of_int num)) register in
 			let ro = const ("ro_" ^ (string_of_int num)) register in 
-			let imm = const ("imm_" ^ (string_of_int num)) register in 
+			let imm = const ("imm_" ^ (string_of_int num)) (bitVecSort 12) in 
 			let imm_used = const ("imm_used_" ^ (string_of_int num)) bool_sort in 
 			let barrel_op = const ("barrel_op_" ^ (string_of_int num)) barrel_op in 
 			let barrel_num = const ("barrel_num_" ^ (string_of_int num)) (bitVecSort 32) in
 
 			let rd_val = select post rd in
 			let rn_val = select pre rn in
-			let flex_val = select pre ro in
+
+			let val_to_shift = ite imm_used 
+				(bitVecRotateRight (bitVecConcat (bitVecValue 0 24) (extract 7 0 imm)) (bitVecShiftLeft (bitVecConcat (bitVecValue 0 28) (extract 11 8 imm)) (bitVecValue 1 32)) ) 
+									(select pre ro) in
+			let flex_val = ite (equals barrel_op bLSL) (bitVecShiftLeft val_to_shift barrel_num) 
+								(ite (equals barrel_op bLSR) (bitVecLogicShiftRight val_to_shift barrel_num) 
+										(bitVecArithShiftRight val_to_shift barrel_num)) in
 
 			let condition_true = conditionTrue pre cond in
 			let condition_false = conditionFalse pre cond in 
@@ -357,11 +364,11 @@ let armConstraints num =
 	in
 
 	let constraints = generateContraints num in 
-	(*
+	
 	let more = [(equals (select (select seq (intValue 0)) pc) (bitVecValue 4 32));
-				(equals (select (select seq (intValue 2)) pc) (bitVecValue 13 32)); ] in *)
+				(equals (select (select seq (intValue 2)) pc) (bitVecValue 12 32)); ] in
 	let solver = Solver.mk_solver context None in
-	solverAdd solver constraints; 
+	solverAdd solver (constraints @ more); 
 	let result = checkSat solver in
 	if result != SATISFIABLE then 
 		Printf.printf "UNSAT"
