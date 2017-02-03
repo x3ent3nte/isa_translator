@@ -52,7 +52,7 @@ let getModel solver = Solver.get_model solver
 
 let armConstraints num =
 	
-	Printf.printf "Generating ARM Constraints\n";
+	Printf.printf "\nGenerating ARM Constraints\n\n";
 	let int_sort = intSort () in
 	let bool_sort = boolSort () in 
 	let b1 = bitVecValue 1 1 in 
@@ -109,13 +109,13 @@ let armConstraints num =
 	let r7 =  bitVecValue 7 5 in 
 	let r8 =  bitVecValue 8 5 in 
 	let r9 =  bitVecValue 9 5 in 
-	let r10 =  bitVecValue 10 5 in 
-	let r11 =  bitVecValue 11 5 in 
-	let r12 =  bitVecValue 12 5 in
+	let r10 = bitVecValue 10 5 in 
+	let r11 = bitVecValue 11 5 in 
+	let r12 = bitVecValue 12 5 in
 	let sp =  bitVecValue 13 5 in 
 	let lr =  bitVecValue 14 5 in 
 	let pc =  bitVecValue 15 5 in  
-	let cpsr =  bitVecValue 16 5 in 
+	let cpsr = bitVecValue 16 5 in 
 
 	let state = arraySort (bitVecSort 5) (bitVecSort 32) in
 	let sequence = arraySort int_sort state in
@@ -211,14 +211,6 @@ let armConstraints num =
 			else
 			let pre = select seq (intValue num) in
 			let post = select seq (intValue (num + 1)) in
-			(*
-			let instr = select prog (intValue num) in
-			let operd = List.nth (FuncDecl.get_parameters (List.nth (List.nth (Datatype.get_accessors instruction) 0) 0)) 0 in
-			*)
-			(*
-			let (instruction, rest) = match program with
-				| instr::tl -> (instr, tl) in
-			*)
 
 			let instr = select prog (intValue num) in 
 			let oper = extract 24 21 instr in 
@@ -369,8 +361,14 @@ let armConstraints num =
 
 	let constraints = generateContraints num in 
 	
-	let more = [(equals (select (select seq (intValue 0)) pc) (bitVecValue 4 32));
-				(equals (select (select seq (intValue 2)) pc) (bitVecValue 12 32));] in
+	let more = [
+				(equals (select (select seq (intValue 0)) pc) (bitVecValue 4 32));
+				(equals (select (select seq (intValue 1)) pc) (bitVecValue 8 32));
+				(equals (select (select seq (intValue 0)) r0) (bitVecValue 0 32));
+				(equals (select (select seq (intValue 0)) r1) (bitVecValue 2 32));
+				(equals (select (select seq (intValue 1)) r0) (bitVecValue 2 32));
+				(equals (select (select seq (intValue 1)) r1) (bitVecValue 2 32));
+				] in
 	let solver = Solver.mk_solver context None in
 	solverAdd solver (constraints @ more); 
 	let result = checkSat solver in
@@ -383,15 +381,17 @@ let armConstraints num =
 		Printf.printf "Solver says: %s\n" (Solver.string_of_status result) ;
 	  	Printf.printf "Model: \n%s\n" (Model.to_string model) ;
 
-	Printf.printf "Finished\n";
+	Printf.printf "\nFinished\n";
 	exit 0
 
-let main = armConstraints 7
+let main = armConstraints 2
 
 (*
 	Use bitvectors for instructions
 	forall/exists qunatifiers
 	Record datatype
+
+	print readable output
 *)
 
 
