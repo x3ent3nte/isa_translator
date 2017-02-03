@@ -50,6 +50,20 @@ let solverAdd solver constraints = Solver.add solver constraints
 let checkSat solver = Solver.check solver [] 
 let getModel solver = Solver.get_model solver
 
+type instruction = 
+	{
+		operx : Expr.expr;
+		condx : Expr.expr;
+		flagx : Expr.expr;
+		rdx : Expr.expr;
+		rnx : Expr.expr;
+		rox : Expr.expr;
+		immx : Expr.expr;
+		imm_usedx : Expr.expr;
+		barrel_opx : Expr.expr;
+		barrel_numx : Expr.expr
+	}
+
 let armConstraints num =
 	
 	Printf.printf "Generating ARM Constraints\n";
@@ -58,71 +72,88 @@ let armConstraints num =
 	let b1 = bitVecValue 1 1 in 
 	let b0 = bitVecValue 0 1 in
 
-	let opAND = bitVecValue 0 4 in
-	let opEOR = bitVecValue 1 4 in
-	let opSUB = bitVecValue 2 4 in
-	let opRSB = bitVecValue 3 4 in
-	let opADD = bitVecValue 4 4 in
-	let opADC = bitVecValue 5 4 in
-	let opSBC = bitVecValue 6 4 in
-	let opRSC = bitVecValue 7 4 in
-	let opTST = bitVecValue 8 4 in
-	let opTEQ = bitVecValue 9 4 in
-	let opCMP = bitVecValue 10 4 in
-	let opCMN = bitVecValue 11 4 in
-	let opORR = bitVecValue 12 4 in
-	let opMOV = bitVecValue 13 4 in
-	let opBIC = bitVecValue 14 4 in
-	let opMVN = bitVecValue 15 4 in 
+	let operation = enumSort "Operation" ["ADD"; "SUB"; "MOV"; "MVN"; "CMP"; "AND"] in
+	let condition = enumSort "Condition" [
+		"EQ"; "NE"; "CS"; "CC"; "MI"; 
+		"PL"; "VS"; "VC"; "HI"; "LS"; 
+		"GE"; "LT"; "GT"; "LE"; "AL"] in 
+	let flag = enumSort "Flag" ["N"; "S"] in
+	let barrel_op = enumSort "BarrelOp" ["LSL"; "LSR"; "ASR"] in
+	let register = enumSort "Register" [
+		"R0"; "R1"; "R2"; "R3"; "R4"; "R5";
+		"R6"; "R7"; "R8"; "R9"; "R10"; "R11"; 
+		"R12"; "SP"; "LR"; "PC"; "CPSR"] in
 
-	let cEQ = bitVecValue 0 4 in
-	let cNE = bitVecValue 1 4 in
-	let cCS = bitVecValue 2 4 in
-	let cCC = bitVecValue 3 4 in
-	let cMI = bitVecValue 4 4 in
-	let cPL = bitVecValue 5 4 in
-	let cVS = bitVecValue 6 4 in
-	let cVC = bitVecValue 7 4 in
-	let cHI = bitVecValue 8 4 in
-	let cLS = bitVecValue 9 4 in
-	let cGE = bitVecValue 10 4 in
-	let cLT = bitVecValue 11 4 in
-	let cGT = bitVecValue 12 4 in
-	let cLE = bitVecValue 13 4 in
-	let cAL = bitVecValue 14 4 in
+	let opADD = enumAt operation 0 in
+	let opSUB = enumAt operation 1 in
+	let opMOV = enumAt operation 2 in
+	let opMVN = enumAt operation 3 in
+	let opCMP = enumAt operation 4 in
+	let opAND = enumAt operation 5 in
 
-	let fN = bitVecValue 0 1 in
-	let fS = bitVecValue 1 1 in
+	let cEQ = enumAt condition 0 in
+	let cNE = enumAt condition 1 in
+	let cCS = enumAt condition 2 in
+	let cCC = enumAt condition 3 in
+	let cMI = enumAt condition 4 in
+	let cPL = enumAt condition 5 in
+	let cVS = enumAt condition 6 in
+	let cVC = enumAt condition 7 in
+	let cHI = enumAt condition 8 in
+	let cLS = enumAt condition 9 in
+	let cGE = enumAt condition 10 in
+	let cLT = enumAt condition 11 in
+	let cGT = enumAt condition 12 in
+	let cLE = enumAt condition 13 in
+	let cAL = enumAt condition 14 in
 
-	let bLSL = bitVecValue 0 2 in
-	let bLSR = bitVecValue 1 2 in
-	let bASR = bitVecValue 2 2 in 
-	let bROR = bitVecValue 3 2 in 
+	let fN = enumAt flag 0 in
+	let fS = enumAt flag 1 in
 
-	let r0 =  bitVecValue 0 5 in 
-	let r1 =  bitVecValue 1 5 in 
-	let r2 =  bitVecValue 2 5 in 
-	let r3 =  bitVecValue 3 5 in 
-	let r4 =  bitVecValue 4 5 in 
-	let r5 =  bitVecValue 5 5 in 
-	let r6 =  bitVecValue 6 5 in 
-	let r7 =  bitVecValue 7 5 in 
-	let r8 =  bitVecValue 8 5 in 
-	let r9 =  bitVecValue 9 5 in 
-	let r10 =  bitVecValue 10 5 in 
-	let r11 =  bitVecValue 11 5 in 
-	let r12 =  bitVecValue 12 5 in
-	let sp =  bitVecValue 13 5 in 
-	let lr =  bitVecValue 14 5 in 
-	let pc =  bitVecValue 15 5 in  
-	let cpsr =  bitVecValue 16 5 in 
+	let bLSL = enumAt barrel_op 0 in
+	let bLSR = enumAt barrel_op 1 in
+	let bASR = enumAt barrel_op 2 in 
 
-	let state = arraySort (bitVecSort 5) (bitVecSort 32) in
+	let r0 =  enumAt register 0 in 
+	let r1 =  enumAt register 1 in 
+	let r2 =  enumAt register 2 in 
+	let r3 =  enumAt register 3 in 
+	let r4 =  enumAt register 4 in 
+	let r5 =  enumAt register 5 in 
+	let r6 =  enumAt register 6 in 
+	let r7 =  enumAt register 7 in 
+	let r8 =  enumAt register 8 in 
+	let r9 =  enumAt register 9 in 
+	let r10 =  enumAt register 10 in 
+	let r11 =  enumAt register 11 in 
+	let r12 =  enumAt register 12 in
+	let sp =  enumAt register 13 in 
+	let lr =  enumAt register 14 in 
+	let pc =  enumAt register 15 in  
+	let cpsr =  enumAt register 16 in 
+
+	let state = arraySort register (bitVecSort 32) in
 	let sequence = arraySort int_sort state in
 
-	let instruction = (bitVecSort 32) in 
-	let program = arraySort int_sort instruction in 
-
+	let initialiseProgram num = 
+		let rec initialiseProgram n acc =
+			match n with
+			|0 -> acc
+			|_ -> initialiseProgram (n - 1) 
+			({
+				operx = (const ("oper_" ^ (string_of_int n)) operation);
+				condx = (const ("cond_" ^ (string_of_int n)) condition);
+				flagx = (const ("flag_" ^ (string_of_int n)) flag);
+				rdx = (const ("rd_" ^ (string_of_int n)) register);
+				rnx = (const ("rn_" ^ (string_of_int n)) register);
+				rox = (const ("ro_" ^ (string_of_int n)) register);
+				immx = (const ("imm_" ^ (string_of_int n)) (bitVecSort 12));
+				imm_usedx = (const ("imm_used_" ^ (string_of_int n)) bool_sort);
+				barrel_opx = (const ("barrel_op_" ^ (string_of_int n)) barrel_op);
+				barrel_numx = (const ("barrel_num_" ^ (string_of_int n)) (bitVecSort 32))
+			}::acc)
+		in 
+		initialiseProgram num [] in 
 (*
 	let instruction = recordSort "Instruction" (symbol "Instruction") [
 		(symbol "operx"); (symbol "condx"); (symbol "flagx"); (symbol "rdx"); (symbol "rnx"); (symbol "rox"); 
@@ -138,7 +169,7 @@ let armConstraints num =
 	*)
 
 	let seq = const "seq" sequence in
-	let prog = const "prog" program in 
+	let program = initialiseProgram num in
 	let conditionTrue pre cond = 
 		(
 			or_log [
@@ -219,61 +250,26 @@ let armConstraints num =
 			let (instruction, rest) = match program with
 				| instr::tl -> (instr, tl) in
 			*)
-
-			let instr = select prog (intValue num) in 
-			let oper = extract 24 21 instr in 
-			let cond = extract 31 28 instr in 
-			let flag_set = extract 20 20 instr in 
-
-			let rd = bitVecConcat (bitVecValue 0 1) (extract 15 12 instr) in 
-			let rn = bitVecConcat (bitVecValue 0 1) (extract 19 16 instr) in 
-
-			let rm = bitVecConcat (bitVecValue 0 1) (extract 3 0 instr) in 
-			let shift_mode = extract 4 4 instr in 
-			let shift_type = extract 6 5 instr in 
-			let rs = bitVecConcat (bitVecValue 0 1) (extract 11 8 instr) in 
-			let shift_num = bitVecConcat (bitVecValue 0 27) (extract 11 7 instr) in 
-
-			let imm_used = extract 25 25 instr in 
-			let imm = bitVecConcat (bitVecValue 0 24) (extract 7 0 instr) in 
-			let imm_shift = bitVecShiftLeft (bitVecConcat (bitVecValue 0 28) (extract 11 8 instr)) (bitVecValue 1 32) in 
+			let oper = const ("oper_" ^ (string_of_int num)) operation in 
+			let cond = const ("cond_" ^ (string_of_int num)) condition in
+			let flag = const ("flag_" ^ (string_of_int num)) flag in 
+			let rd = const ("rd_" ^ (string_of_int num)) register in 
+			let rn = const ("rn_" ^ (string_of_int num)) register in
+			let ro = const ("ro_" ^ (string_of_int num)) register in 
+			let imm = const ("imm_" ^ (string_of_int num)) (bitVecSort 12) in 
+			let imm_used = const ("imm_used_" ^ (string_of_int num)) bool_sort in 
+			let barrel_op = const ("barrel_op_" ^ (string_of_int num)) barrel_op in 
+			let barrel_num = const ("barrel_num_" ^ (string_of_int num)) (bitVecSort 32) in
 
 			let rd_val = select post rd in
 			let rn_val = select pre rn in
-			let rm_val = select pre rm in 
-			let rs_val = select pre rs in 
 
-			let flex_val = 
-				ite (equals imm_used b1)
-					(bitVecRotateRight imm imm_shift) 
-					(ite (equals shift_mode b0) 
-						(ite 
-							(equals shift_type bLSL)
-							(bitVecShiftLeft rm_val shift_num)
-							(ite 
-								(equals shift_type bLSR)
-								(bitVecLogicShiftRight rm_val shift_num)
-								(ite 
-									(equals shift_type bASR)
-									(bitVecArithShiftRight rm_val shift_num)
-									(bitVecRotateRight rm_val shift_num)
-								)
-							)
-						)
-						(ite 
-							(equals shift_type bLSL)
-							(bitVecShiftLeft rm_val rs_val)
-							(ite 
-								(equals shift_type bLSR)
-								(bitVecLogicShiftRight rm_val rs_val)
-								(ite 
-									(equals shift_type bASR)
-									(bitVecArithShiftRight rm_val rs_val)
-									(bitVecRotateRight rm_val rs_val)
-								)
-							)
-						) 
-					) in 
+			let val_to_shift = ite imm_used 
+				(bitVecRotateRight (bitVecConcat (bitVecValue 0 24) (extract 7 0 imm)) (bitVecShiftLeft (bitVecConcat (bitVecValue 0 28) (extract 11 8 imm)) (bitVecValue 1 32)) ) 
+									(select pre ro) in
+			let flex_val = ite (equals barrel_op bLSL) (bitVecShiftLeft val_to_shift barrel_num) 
+								(ite (equals barrel_op bLSR) (bitVecLogicShiftRight val_to_shift barrel_num) 
+										(bitVecArithShiftRight val_to_shift barrel_num)) in
 
 			let condition_true = conditionTrue pre cond in
 			let condition_false = conditionFalse pre cond in 
@@ -340,11 +336,11 @@ let armConstraints num =
 								]);
 								(or_log [
 									(and_log [
-										(equals flag_set fN);
+										(equals flag fN);
 										(equals (select post cpsr) (select pre cpsr))
 									]);
 									(and_log [
-										(equals flag_set fS);
+										(equals flag fS);
 										(or_log [
 											(not_log (equals rd_val (bitVecValue 0 32)));
 											(equals (extract 30 30 (select post cpsr)) b1)
@@ -370,7 +366,7 @@ let armConstraints num =
 	let constraints = generateContraints num in 
 	
 	let more = [(equals (select (select seq (intValue 0)) pc) (bitVecValue 4 32));
-				(equals (select (select seq (intValue 2)) pc) (bitVecValue 12 32));] in
+				(equals (select (select seq (intValue 2)) pc) (bitVecValue 11 32));] in
 	let solver = Solver.mk_solver context None in
 	solverAdd solver (constraints @ more); 
 	let result = checkSat solver in
