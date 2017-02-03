@@ -123,20 +123,6 @@ let armConstraints num =
 	let instruction = (bitVecSort 32) in 
 	let program = arraySort int_sort instruction in 
 
-(*
-	let instruction = recordSort "Instruction" (symbol "Instruction") [
-		(symbol "operx"); (symbol "condx"); (symbol "flagx"); (symbol "rdx"); (symbol "rnx"); (symbol "rox"); 
-		(symbol "immx"); (symbol "imm_usedx"); (symbol "barrel_opx"); (symbol "barrel_numx");
-		] [
-			Some operation; Some condition; Some flag; Some register; Some register; Some register; 
-			Some (bitVecSort 12); Some bool_sort; Some barrel_op; Some (bitVecSort 32)
-		] [0;1;2;3;4;5;6;7;8;9] in
-	let program = arraySort int_sort instruction in
-
-	let seq = const "seq" sequence in
-	let prog = const "prog" program in
-	*)
-
 	let seq = const "seq" sequence in
 	let prog = const "prog" program in 
 	let conditionTrue pre cond = 
@@ -384,12 +370,12 @@ let armConstraints num =
 	Printf.printf "\nFinished\n";
 	exit 0
 
-let main = armConstraints 2
+let main = armConstraints 3
 
 (*
-	Use bitvectors for instructions
-	forall/exists qunatifiers
-	Record datatype
+	Use bitvectors for instructions V
+	Record datatype X
+	forall/exists quantifiers
 
 	print readable output
 *)
