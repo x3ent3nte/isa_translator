@@ -19,6 +19,9 @@ let bitVecSort size = BitVector.mk_sort context size
 let bitVecAdd x y = BitVector.mk_add context x y
 let bitVecSub x y = BitVector.mk_sub context x y
 let bitVecAnd x y = BitVector.mk_and context x y
+let bitVecNand x y  = BitVector.mk_nand context x y
+let bitVecOr x y = BitVector.mk_or context x y
+let bitVecXor x y = BitVector.mk_xor context x y
 let bitVecNot x = BitVector.mk_not context x
 let bitVecConcat x y = BitVector.mk_concat context x y
 let bitVecShiftLeft bv shifts = BitVector.mk_shl context bv shifts
@@ -49,6 +52,49 @@ let const name typ = Expr.mk_const context (symbol name) typ
 let solverAdd solver constraints = Solver.add solver constraints
 let checkSat solver = Solver.check solver [] 
 let getModel solver = Solver.get_model solver
+let eval model expr flag = Model.eval model expr flag
+
+(*
+	Oper
+	1111111XXXX111111111111111111111 
+
+	Cond
+	XXXX1111111111111111111111111111
+
+	Flag_set
+	11111111111X11111111111111111111
+
+	Imm_used 
+	111111X1111111111111111111111111
+
+	RD
+
+
+*)
+
+let analyseOperation inst =
+	if inst land 0b1111111_0000_111111111111111111111 = inst then "AND"
+	else if inst land 0b1111111_0001_111111111111111111111 = inst then "EOR"
+	else if inst land 0b1111111_0010_111111111111111111111 = inst then "SUB"
+	else if inst land 0b1111111_0011_111111111111111111111 = inst then "RSB"
+	else if inst land 0b1111111_0100_111111111111111111111 = inst then "ADD"
+	else if inst land 0b1111111_0101_111111111111111111111 = inst then "ADC"
+	else if inst land 0b1111111_0110_111111111111111111111 = inst then "SBC"
+	else if inst land 0b1111111_0111_111111111111111111111 = inst then "RSC"
+	else if inst land 0b1111111_1000_111111111111111111111 = inst then "TST"
+	else if inst land 0b1111111_1001_111111111111111111111 = inst then "TEQ"
+	else if inst land 0b1111111_1010_111111111111111111111 = inst then "CMP"
+	else if inst land 0b1111111_1011_111111111111111111111 = inst then "CMN"
+	else if inst land 0b1111111_1100_111111111111111111111 = inst then "ORR"
+	else if inst land 0b1111111_1101_111111111111111111111 = inst then "MOV"
+	else if inst land 0b1111111_1110_111111111111111111111 = inst then "BIC"
+	else if inst land 0b1111111_1111_111111111111111111111 = inst then "MVN"
+	else "No oper!"
+
+let rec displayInstructions li =
+	match li with
+	| [] -> ()
+	| inst::tl -> Printf.printf "%s\n" (analyseOperation inst); displayInstructions tl
 
 let armConstraints num =
 	
@@ -267,7 +313,12 @@ let armConstraints num =
 						(or_log [
 							(and_log [
 								r0_to_lr_equal;
-								(or_log [(equals oper opCMP)]);
+								(or_log [
+									(equals oper opCMP);
+									(equals oper opCMN);
+									(equals oper opTST);
+									(equals oper opTEQ);
+								]);
 								(and_log [
 									(or_log [
 										(not_log (equals oper opCMP));
@@ -277,18 +328,61 @@ let armConstraints num =
 												(equals (extract 30 30 (select post cpsr)) b1)
 											]);
 											(or_log [
-												(not_log (equals rn_val flex_val));
+												(equals rn_val flex_val);
+												(equals (extract 30 30 (select post cpsr)) b0)
+											])
+										])
+									]);
+									(or_log [
+										(not_log (equals oper opCMN));
+										(and_log [
+											(or_log [
+												(not_log (equals (bitVecAdd rn_val flex_val) (bitVecValue 0 32)));
 												(equals (extract 30 30 (select post cpsr)) b1)
+											]);
+											(or_log [
+												(equals (bitVecAdd rn_val flex_val) (bitVecValue 0 32));
+												(equals (extract 30 30 (select post cpsr)) b0)
+											])
+										])
+									]);
+									(or_log [
+										(not_log (equals oper opTST));
+										(and_log [
+											(or_log [
+												(not_log (equals (bitVecAnd rn_val flex_val) (bitVecValue 0 32)));
+												(equals (extract 30 30 (select post cpsr)) b1)
+											]);
+											(or_log [
+												(equals (bitVecAnd rn_val flex_val) (bitVecValue 0 32));
+												(equals (extract 30 30 (select post cpsr)) b0)
+											])
+										])
+									]);
+									(or_log [
+										(not_log (equals oper opTEQ));
+										(and_log [
+											(or_log [
+												(not_log (equals (bitVecXor rn_val flex_val) (bitVecValue 0 32)));
+												(equals (extract 30 30 (select post cpsr)) b1)
+											]);
+											(or_log [
+												(equals (bitVecXor rn_val flex_val) (bitVecValue 0 32));
+												(equals (extract 30 30 (select post cpsr)) b0)
 											])
 										])
 									])
+
 								])
 							]);
 							(and_log [
 								r0_to_lr_equal_except;
 								(or_log [
 									(and_log [
-										(or_log [(equals oper opMOV); (equals oper opMVN)]);
+										(or_log [
+											(equals oper opMOV); 
+											(equals oper opMVN)
+										]);
 										(or_log [
 											(not_log (equals oper opMOV));
 											(equals rd_val flex_val)
@@ -300,7 +394,13 @@ let armConstraints num =
 									]);
 									(and_log [
 										(or_log [
-											(equals oper opADD); (equals oper opSUB); (equals oper opAND)
+											(equals oper opADD); 
+											(equals oper opSUB);
+											(equals oper opRSB); 
+											(equals oper opAND);
+											(equals oper opORR);
+											(equals oper opEOR);
+											(equals oper opBIC);
 										]);
 										(or_log [
 											(not_log (equals oper opADD));
@@ -311,9 +411,25 @@ let armConstraints num =
 											(equals rd_val (bitVecSub (select pre rn) flex_val));
 										]);
 										(or_log [
+											(not_log (equals oper opRSB));
+											(equals rd_val (bitVecSub flex_val (select pre rn)));
+										]);
+										(or_log [
 											(not_log (equals oper opAND));
 											(equals rd_val (bitVecAnd (select pre rn) flex_val));
-										])
+										]);
+										(or_log [
+											(not_log (equals oper opORR));
+											(equals rd_val (bitVecOr (select pre rn) flex_val));
+										]);
+										(or_log [
+											(not_log (equals oper opEOR));
+											(equals rd_val (bitVecXor (select pre rn) flex_val));
+										]);
+										(or_log [
+											(not_log (equals oper opBIC));
+											(equals rd_val (bitVecNand (select pre rn) flex_val));
+										]);
 									])
 								]);
 								(or_log [
@@ -352,8 +468,9 @@ let armConstraints num =
 				(equals (select (select seq (intValue 1)) pc) (bitVecValue 8 32));
 				(equals (select (select seq (intValue 0)) r0) (bitVecValue 0 32));
 				(equals (select (select seq (intValue 0)) r1) (bitVecValue 2 32));
-				(equals (select (select seq (intValue 1)) r0) (bitVecValue 2 32));
+				(equals (select (select seq (intValue 1)) r0) (bitVecValue 0 32));
 				(equals (select (select seq (intValue 1)) r1) (bitVecValue 2 32));
+				(equals (extract 24 21 (select prog (intValue 0))) opTEQ);
 				] in
 	let solver = Solver.mk_solver context None in
 	solverAdd solver (constraints @ more); 
@@ -365,8 +482,34 @@ let armConstraints num =
 	| None -> Printf.printf "NO MODEL"
 	| Some (model) ->
 		Printf.printf "Solver says: %s\n" (Solver.string_of_status result) ;
-	  	Printf.printf "Model: \n%s\n" (Model.to_string model) ;
+	  	Printf.printf "Model: \n%s\n" (Model.to_string model);
+	  	
+	  	let inst_one = eval model (select prog (intValue 0)) true in 
+	  	match inst_one with
+	  	| None -> Printf.printf "value does not exist"
+	  	| Some (inst_one) -> Printf.printf "\nInstruction 1: %d\n" (int_of_string ("0x" ^ (String.sub (Expr.to_string inst_one) 2 8)));
+		
+		let program_output = eval model prog true in 
 
+		let instructionList model num = 
+			let rec instructionList model num max instructions =
+			if num = max then instructions
+			else
+				let inst = eval model (select prog (intValue num)) true in 
+				match inst with
+				| None -> Printf.printf "Error: instruction not found!"; instructionList model (num + 1) max (0::instructions)
+				| Some(inst) -> let inst_int = (int_of_string ("0x" ^ (String.sub (Expr.to_string inst) 2 8))) in
+				instructionList model (num + 1) max (inst_int::instructions)
+			in 
+			List.rev (instructionList model 0 num []) in
+	let instruction_list = instructionList model num in
+	let rec printList li =
+		match li with
+		|[] -> ()
+		|hd::tl -> Printf.printf "%d\n" hd; printList tl in 
+
+	displayInstructions instruction_list;
+	printList instruction_list;
 	Printf.printf "\nFinished\n";
 	exit 0
 
