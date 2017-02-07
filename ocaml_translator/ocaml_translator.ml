@@ -73,28 +73,86 @@ let eval model expr flag = Model.eval model expr flag
 *)
 
 let analyseOperation inst =
-	if inst land 0b1111111_0000_111111111111111111111 = inst then "AND"
-	else if inst land 0b1111111_0001_111111111111111111111 = inst then "EOR"
-	else if inst land 0b1111111_0010_111111111111111111111 = inst then "SUB"
-	else if inst land 0b1111111_0011_111111111111111111111 = inst then "RSB"
-	else if inst land 0b1111111_0100_111111111111111111111 = inst then "ADD"
-	else if inst land 0b1111111_0101_111111111111111111111 = inst then "ADC"
-	else if inst land 0b1111111_0110_111111111111111111111 = inst then "SBC"
-	else if inst land 0b1111111_0111_111111111111111111111 = inst then "RSC"
-	else if inst land 0b1111111_1000_111111111111111111111 = inst then "TST"
-	else if inst land 0b1111111_1001_111111111111111111111 = inst then "TEQ"
-	else if inst land 0b1111111_1010_111111111111111111111 = inst then "CMP"
-	else if inst land 0b1111111_1011_111111111111111111111 = inst then "CMN"
-	else if inst land 0b1111111_1100_111111111111111111111 = inst then "ORR"
-	else if inst land 0b1111111_1101_111111111111111111111 = inst then "MOV"
-	else if inst land 0b1111111_1110_111111111111111111111 = inst then "BIC"
-	else if inst land 0b1111111_1111_111111111111111111111 = inst then "MVN"
-	else "No oper!"
+	let oper = ((inst lsl 7) lsr 7) lsr 21 in
+	Printf.printf "num is %d \n" oper;
+	match oper with
+	| 0b0000 -> "AND"
+	| 0b0001 -> "EOR"
+	| 0b0010 -> "SUB"
+	| 0b0011 -> "RSB"
+	| 0b0100 -> "ADD"
+	| 0b0101 -> "ADC"
+	| 0b0110 -> "SBC"
+	| 0b0111 -> "RSC"
+	| 0b1000 -> "TST"
+	| 0b1001 -> "TEQ"
+	| 0b1010 -> "CMP"
+	| 0b1011 -> "CMN"
+	| 0b1100 -> "ORR"
+	| 0b1101 -> "MOV"
+	| 0b1110 -> "BIC"
+	| 0b1111 -> "MVN"
+	| _ -> "No Oper!"
+
+let analyseCondition inst = 
+	if inst land 0b0000_1111111111111111111111111111 = inst then "EQ"
+	else if inst land 0b0001_1111111111111111111111111111 = inst then "NE"
+	else if inst land 0b0010_1111111111111111111111111111 = inst then "CS"
+	else if inst land 0b0011_1111111111111111111111111111 = inst then "CC"
+	else if inst land 0b0100_1111111111111111111111111111 = inst then "MI"
+	else if inst land 0b0101_1111111111111111111111111111 = inst then "PL"
+	else if inst land 0b0110_1111111111111111111111111111 = inst then "VS"
+	else if inst land 0b0111_1111111111111111111111111111 = inst then "VC"
+	else if inst land 0b1000_1111111111111111111111111111 = inst then "HI"
+	else if inst land 0b1001_1111111111111111111111111111 = inst then "LS"
+	else if inst land 0b1010_1111111111111111111111111111 = inst then "GE"
+	else if inst land 0b1011_1111111111111111111111111111 = inst then "LT"
+	else if inst land 0b1100_1111111111111111111111111111 = inst then "GT"
+	else if inst land 0b1101_1111111111111111111111111111 = inst then "LE"
+	else if inst land 0b1110_1111111111111111111111111111 = inst then "AL"
+	else if inst land 0b1111_1111111111111111111111111111 = inst then "AL2"
+	else "No cond!"
+
+let analyseFlagSet inst =
+	if inst land 0b11111111111_0_11111111111111111111 = inst then " "
+	else "S"
+
+let analyseRegister inst = 
+	if inst land 0b1111111111111111111111111111_0000 = inst then "R0 "
+	else if inst land 0b1111111111111111111111111111_0001 = inst then "R1 "
+	else if inst land 0b1111111111111111111111111111_0010 = inst then "R2 "
+	else if inst land 0b1111111111111111111111111111_0011 = inst then "R3 "
+	else if inst land 0b1111111111111111111111111111_0100 = inst then "R4 "
+	else if inst land 0b1111111111111111111111111111_0101 = inst then "R5 "
+	else if inst land 0b1111111111111111111111111111_0110 = inst then "R6 "
+	else if inst land 0b1111111111111111111111111111_0111 = inst then "R7 "
+	else if inst land 0b1111111111111111111111111111_1000 = inst then "R8 "
+	else if inst land 0b1111111111111111111111111111_1001 = inst then "R9 "
+	else if inst land 0b1111111111111111111111111111_1010 = inst then "R10"
+	else if inst land 0b1111111111111111111111111111_1011 = inst then "R11"
+	else if inst land 0b1111111111111111111111111111_1100 = inst then "R12"
+	else if inst land 0b1111111111111111111111111111_1101 = inst then "SP "
+	else if inst land 0b1111111111111111111111111111_1110 = inst then "LR "
+	else if inst land 0b1111111111111111111111111111_1111 = inst then "PC "
+	else "No Rd!"
+
+let analyseImmUsed inst = 
+	not (inst land 0b111111_0_1111111111111111111111111 = inst)
+
+let analyseRd inst = analyseRegister (inst lsr 12)
+let analyseRn inst = analyseRegister (inst lsr 16)
+let analysRo inst = analyseRegister inst
 
 let rec displayInstructions li =
 	match li with
 	| [] -> ()
-	| inst::tl -> Printf.printf "%s\n" (analyseOperation inst); displayInstructions tl
+	| inst::tl -> 
+		let oper = analyseOperation inst in 
+		let cond = analyseCondition inst in
+		let flag_set = analyseFlagSet inst in
+		let rd = analyseRd inst in 
+		let rn = analyseRn inst in
+		Printf.printf "%s %s %s %s %s\n" oper cond flag_set rd rn; displayInstructions tl
 
 let armConstraints num =
 	
@@ -136,6 +194,7 @@ let armConstraints num =
 	let cGT = bitVecValue 12 4 in
 	let cLE = bitVecValue 13 4 in
 	let cAL = bitVecValue 14 4 in
+	let cAL2 = bitVecValue 15 4 in
 
 	let fN = bitVecValue 0 1 in
 	let fS = bitVecValue 1 1 in
@@ -182,6 +241,34 @@ let armConstraints num =
 				(and_log [(equals cond cPL); (equals (extract 31 31 (select pre cpsr)) b0)]);
 				(and_log [(equals cond cVS); (equals (extract 30 30 (select pre cpsr)) b1)]);
 				(and_log [(equals cond cVC); (equals (extract 30 30 (select pre cpsr)) b0)]);
+				(and_log [
+					(equals cond cHI); 
+					(and_log [
+						(equals (extract 29 29 (select pre cpsr)) b1);
+						(equals (extract 30 30 (select pre cpsr)) b0);
+					])
+				]);
+				(and_log [
+					(equals cond cLS); 
+					(or_log [
+						(equals (extract 29 29 (select pre cpsr)) b0);
+						(equals (extract 30 30 (select pre cpsr)) b1);
+					])
+				]);
+				(and_log [
+					(equals cond cGE); 
+					(and_log [
+						(equals (extract 31 31 (select pre cpsr)) b1);
+						(equals (extract 28 28 (select pre cpsr)) b0);
+					])
+				]);
+				(and_log [
+					(equals cond cLT); 
+					(or_log [
+						(equals (extract 31 31 (select pre cpsr)) b0);
+						(equals (extract 28 28 (select pre cpsr)) b1);
+					])
+				]);
 				(and_log [ 
 					(equals cond cGT); (and_log [
 						(equals (extract 30 30 (select pre cpsr)) b0);
@@ -194,7 +281,8 @@ let armConstraints num =
 						(not_log (equals (equals (extract 31 31 (select pre cpsr)) b1) (equals (extract 28 28 (select pre cpsr)) b1)))
 					])
 				]);
-				(equals cond cAL)
+				(equals cond cAL);
+				(equals cond cAL2)
 			]
 		) in
 
@@ -484,13 +572,12 @@ let armConstraints num =
 		Printf.printf "Solver says: %s\n" (Solver.string_of_status result) ;
 	  	Printf.printf "Model: \n%s\n" (Model.to_string model);
 	  	
+	  	(*
 	  	let inst_one = eval model (select prog (intValue 0)) true in 
 	  	match inst_one with
 	  	| None -> Printf.printf "value does not exist"
 	  	| Some (inst_one) -> Printf.printf "\nInstruction 1: %d\n" (int_of_string ("0x" ^ (String.sub (Expr.to_string inst_one) 2 8)));
-		
-		let program_output = eval model prog true in 
-
+		*)
 		let instructionList model num = 
 			let rec instructionList model num max instructions =
 			if num = max then instructions
@@ -508,7 +595,7 @@ let armConstraints num =
 		|[] -> ()
 		|hd::tl -> Printf.printf "%d\n" hd; printList tl in 
 
-	displayInstructions instruction_list;
+	(*displayInstructions instruction_list;*)
 	printList instruction_list;
 	Printf.printf "\nFinished\n";
 	exit 0
