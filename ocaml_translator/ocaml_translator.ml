@@ -427,14 +427,26 @@ let armConstraints num =
 									]);
 									(and_log [
 										(equals flag_set fS);
-										(or_log [
+										(and_log [
+											(or_log [
 											(not_log (equals rd_val (bitVecValue 0 32)));
 											(equals (extract 30 30 (select post cpsr)) b1)
+											]);
+											(or_log [
+												(equals rd_val (bitVecValue 0 32));
+												(equals (extract 30 30 (select post cpsr)) b0)
+											])
 										]);
-										(or_log [
-											(not_log (equals rd_val (bitVecValue 0 32)));
-											(equals (extract 30 30 (select post cpsr)) b0)
-										])
+										(and_log [
+											(or_log [
+											(not_log (equals (extract 31 31 rd_val) b1));
+											(equals (extract 31 31 (select post cpsr)) b1)
+											]);
+											(or_log [
+												(equals (extract 31 31 rd_val) b1);
+												(equals (extract 31 31 (select post cpsr)) b0)
+											])
+										]);
 									])
 								])
 							]);
@@ -460,6 +472,9 @@ let armConstraints num =
 				(equals (select (select seq (intValue 1)) r1) (bitVecValue 2 32));
 				(equals (extract 24 21 (select prog (intValue 0))) opAND);
 				(equals (extract 31 28 (select prog (intValue 0))) cEQ);
+				(equals (extract 31 31 (select (select seq (intValue 0)) cpsr)) b1);
+				(equals (extract 31 31 (select (select seq (intValue 1)) cpsr)) b0);
+				(equals (select (select seq (intValue 10)) pc) (bitVecValue 44 32));
 				] in
 
 	let solver = Solver.mk_solver context None in
@@ -631,14 +646,18 @@ let armConstraints num =
 	Printf.printf "\nFinished\n";
 	exit 0
 
-let main = armConstraints 6
+let main = armConstraints 10
 
 (*
-	Use bitvectors for instructions V
-	Record datatype X
-	forall/exists quantifiers
+	TODO
 
-	print readable output
+	Use bitvectors for instructions V
+	Use Record datatype X
+	print readable output V
+
+	forall/exists quantifiers
+	overflow/carry flag setting
+	print out only rn and op2 for 2 register operations
 *)
 
 
