@@ -6,7 +6,7 @@ exception TestFailedException of string
 let config = [("model", "true"); ("proof", "false")]
 let context = Z3.mk_context config
 
-let echo message = Printf.printf  message ^ "\n" 
+let echo message = Printf.printf message ^ "\n" 
 
 let add x y = Arithmetic.mk_add context [x;y]
 let intSort () = Arithmetic.Integer.mk_sort context
@@ -53,106 +53,6 @@ let solverAdd solver constraints = Solver.add solver constraints
 let checkSat solver = Solver.check solver [] 
 let getModel solver = Solver.get_model solver
 let eval model expr flag = Model.eval model expr flag
-
-(*
-	Oper
-	1111111XXXX111111111111111111111 
-
-	Cond
-	XXXX1111111111111111111111111111
-
-	Flag_set
-	11111111111X11111111111111111111
-
-	Imm_used 
-	111111X1111111111111111111111111
-
-	RD
-
-
-*)
-
-let analyseOperation inst =
-	let oper = ((inst lsl 7) lsr 7) lsr 21 in
-	Printf.printf "num is %d \n" oper;
-	match oper with
-	| 0b0000 -> "AND"
-	| 0b0001 -> "EOR"
-	| 0b0010 -> "SUB"
-	| 0b0011 -> "RSB"
-	| 0b0100 -> "ADD"
-	| 0b0101 -> "ADC"
-	| 0b0110 -> "SBC"
-	| 0b0111 -> "RSC"
-	| 0b1000 -> "TST"
-	| 0b1001 -> "TEQ"
-	| 0b1010 -> "CMP"
-	| 0b1011 -> "CMN"
-	| 0b1100 -> "ORR"
-	| 0b1101 -> "MOV"
-	| 0b1110 -> "BIC"
-	| 0b1111 -> "MVN"
-	| _ -> "No Oper!"
-
-let analyseCondition inst = 
-	if inst land 0b0000_1111111111111111111111111111 = inst then "EQ"
-	else if inst land 0b0001_1111111111111111111111111111 = inst then "NE"
-	else if inst land 0b0010_1111111111111111111111111111 = inst then "CS"
-	else if inst land 0b0011_1111111111111111111111111111 = inst then "CC"
-	else if inst land 0b0100_1111111111111111111111111111 = inst then "MI"
-	else if inst land 0b0101_1111111111111111111111111111 = inst then "PL"
-	else if inst land 0b0110_1111111111111111111111111111 = inst then "VS"
-	else if inst land 0b0111_1111111111111111111111111111 = inst then "VC"
-	else if inst land 0b1000_1111111111111111111111111111 = inst then "HI"
-	else if inst land 0b1001_1111111111111111111111111111 = inst then "LS"
-	else if inst land 0b1010_1111111111111111111111111111 = inst then "GE"
-	else if inst land 0b1011_1111111111111111111111111111 = inst then "LT"
-	else if inst land 0b1100_1111111111111111111111111111 = inst then "GT"
-	else if inst land 0b1101_1111111111111111111111111111 = inst then "LE"
-	else if inst land 0b1110_1111111111111111111111111111 = inst then "AL"
-	else if inst land 0b1111_1111111111111111111111111111 = inst then "AL2"
-	else "No cond!"
-
-let analyseFlagSet inst =
-	if inst land 0b11111111111_0_11111111111111111111 = inst then " "
-	else "S"
-
-let analyseRegister inst = 
-	if inst land 0b1111111111111111111111111111_0000 = inst then "R0 "
-	else if inst land 0b1111111111111111111111111111_0001 = inst then "R1 "
-	else if inst land 0b1111111111111111111111111111_0010 = inst then "R2 "
-	else if inst land 0b1111111111111111111111111111_0011 = inst then "R3 "
-	else if inst land 0b1111111111111111111111111111_0100 = inst then "R4 "
-	else if inst land 0b1111111111111111111111111111_0101 = inst then "R5 "
-	else if inst land 0b1111111111111111111111111111_0110 = inst then "R6 "
-	else if inst land 0b1111111111111111111111111111_0111 = inst then "R7 "
-	else if inst land 0b1111111111111111111111111111_1000 = inst then "R8 "
-	else if inst land 0b1111111111111111111111111111_1001 = inst then "R9 "
-	else if inst land 0b1111111111111111111111111111_1010 = inst then "R10"
-	else if inst land 0b1111111111111111111111111111_1011 = inst then "R11"
-	else if inst land 0b1111111111111111111111111111_1100 = inst then "R12"
-	else if inst land 0b1111111111111111111111111111_1101 = inst then "SP "
-	else if inst land 0b1111111111111111111111111111_1110 = inst then "LR "
-	else if inst land 0b1111111111111111111111111111_1111 = inst then "PC "
-	else "No Rd!"
-
-let analyseImmUsed inst = 
-	not (inst land 0b111111_0_1111111111111111111111111 = inst)
-
-let analyseRd inst = analyseRegister (inst lsr 12)
-let analyseRn inst = analyseRegister (inst lsr 16)
-let analysRo inst = analyseRegister inst
-
-let rec displayInstructions li =
-	match li with
-	| [] -> ()
-	| inst::tl -> 
-		let oper = analyseOperation inst in 
-		let cond = analyseCondition inst in
-		let flag_set = analyseFlagSet inst in
-		let rd = analyseRd inst in 
-		let rn = analyseRn inst in
-		Printf.printf "%s %s %s %s %s\n" oper cond flag_set rd rn; displayInstructions tl
 
 let armConstraints num =
 	
@@ -558,49 +458,180 @@ let armConstraints num =
 				(equals (select (select seq (intValue 0)) r1) (bitVecValue 2 32));
 				(equals (select (select seq (intValue 1)) r0) (bitVecValue 0 32));
 				(equals (select (select seq (intValue 1)) r1) (bitVecValue 2 32));
-				(equals (extract 24 21 (select prog (intValue 0))) opTEQ);
+				(equals (extract 24 21 (select prog (intValue 0))) opAND);
+				(equals (extract 31 28 (select prog (intValue 0))) cEQ);
 				] in
+
 	let solver = Solver.mk_solver context None in
 	solverAdd solver (constraints @ more); 
 	let result = checkSat solver in
+
 	if result != SATISFIABLE then 
 		Printf.printf "UNSAT"
 	else let model = getModel solver in
+
 	match model with
 	| None -> Printf.printf "NO MODEL"
 	| Some (model) ->
 		Printf.printf "Solver says: %s\n" (Solver.string_of_status result) ;
-	  	Printf.printf "Model: \n%s\n" (Model.to_string model);
+	  	Printf.printf "Model: \n%s\n\n" (Model.to_string model);
 	  	
-	  	(*
-	  	let inst_one = eval model (select prog (intValue 0)) true in 
-	  	match inst_one with
-	  	| None -> Printf.printf "value does not exist"
-	  	| Some (inst_one) -> Printf.printf "\nInstruction 1: %d\n" (int_of_string ("0x" ^ (String.sub (Expr.to_string inst_one) 2 8)));
-		*)
-		let instructionList model num = 
-			let rec instructionList model num max instructions =
-			if num = max then instructions
-			else
-				let inst = eval model (select prog (intValue num)) true in 
-				match inst with
-				| None -> Printf.printf "Error: instruction not found!"; instructionList model (num + 1) max (0::instructions)
-				| Some(inst) -> let inst_int = (int_of_string ("0x" ^ (String.sub (Expr.to_string inst) 2 8))) in
-				instructionList model (num + 1) max (inst_int::instructions)
-			in 
-			List.rev (instructionList model 0 num []) in
-	let instruction_list = instructionList model num in
-	let rec printList li =
-		match li with
-		|[] -> ()
-		|hd::tl -> Printf.printf "%d\n" hd; printList tl in 
+		let instructionPrint model num = 
+			let rec instructionPrint model num max =
+			if num < max then 
 
-	(*displayInstructions instruction_list;*)
-	printList instruction_list;
+				let matchBooleanEval opt =
+					match opt with
+					| None -> false
+					| Some(opt) -> Boolean.is_true opt in
+
+				let getOper instr =
+					let bits = extract 24 21 instr in 
+					if matchBooleanEval (eval model (equals bits opAND) true) then "AND"
+					else if matchBooleanEval (eval model (equals bits opEOR) true) then "EOR"
+					else if matchBooleanEval (eval model (equals bits opSUB) true) then "SUB"
+					else if matchBooleanEval (eval model (equals bits opRSB) true) then "RSB"
+					else if matchBooleanEval (eval model (equals bits opADD) true) then "ADD"
+					else if matchBooleanEval (eval model (equals bits opADC) true) then "ADC"
+					else if matchBooleanEval (eval model (equals bits opSBC) true) then "SBC"
+					else if matchBooleanEval (eval model (equals bits opRSC) true) then "RSC"
+					else if matchBooleanEval (eval model (equals bits opTST) true) then "TST"
+					else if matchBooleanEval (eval model (equals bits opTEQ) true) then "TEQ"
+					else if matchBooleanEval (eval model (equals bits opCMP) true) then "CMP"
+					else if matchBooleanEval (eval model (equals bits opCMN) true) then "CMN"
+					else if matchBooleanEval (eval model (equals bits opORR) true) then "ORR"
+					else if matchBooleanEval (eval model (equals bits opMOV) true) then "MOV"
+					else if matchBooleanEval (eval model (equals bits opBIC) true) then "BIC"
+					else if matchBooleanEval (eval model (equals bits opMVN) true) then "MVN"
+					else "No Oper!" in 
+
+				let getCond instr =
+					let bits = extract 31 28 instr in 
+					if matchBooleanEval (eval model (equals bits cEQ) true) then "EQ"
+					else if matchBooleanEval (eval model (equals bits cNE) true) then "NE"
+					else if matchBooleanEval (eval model (equals bits cCS) true) then "CS"
+					else if matchBooleanEval (eval model (equals bits cCC) true) then "CC"
+					else if matchBooleanEval (eval model (equals bits cMI) true) then "MI"
+					else if matchBooleanEval (eval model (equals bits cPL) true) then "PL"
+					else if matchBooleanEval (eval model (equals bits cVS) true) then "VS"
+					else if matchBooleanEval (eval model (equals bits cVC) true) then "VC"
+					else if matchBooleanEval (eval model (equals bits cHI) true) then "HI"
+					else if matchBooleanEval (eval model (equals bits cLS) true) then "LS"
+					else if matchBooleanEval (eval model (equals bits cGE) true) then "GE"
+					else if matchBooleanEval (eval model (equals bits cLT) true) then "LT"
+					else if matchBooleanEval (eval model (equals bits cGT) true) then "GT"
+					else if matchBooleanEval (eval model (equals bits cLE) true) then "LE"
+					else if matchBooleanEval (eval model (equals bits cAL) true) then "AL"
+					else if matchBooleanEval (eval model (equals bits cAL2) true) then "AL"
+					else "No Cond!" in 
+
+				let getFlagSet instr =
+					let bits = extract 20 20 instr in 
+					if matchBooleanEval (eval model (equals bits fN) true) then " "
+					else if matchBooleanEval (eval model (equals bits fS) true) then "S"
+					else "No Flag_set!" in 
+
+				let isImm_used instr = 
+					let bits = extract 25 25 instr in 
+					matchBooleanEval (eval model (equals bits b1) true) in 
+
+				let getRegister bits =
+					if matchBooleanEval (eval model (equals bits r0) true) then "R0 "
+					else if matchBooleanEval (eval model (equals bits r1) true) then "R1 "
+					else if matchBooleanEval (eval model (equals bits r2) true) then "R2 "
+					else if matchBooleanEval (eval model (equals bits r3) true) then "R3 "
+					else if matchBooleanEval (eval model (equals bits r4) true) then "R4 "
+					else if matchBooleanEval (eval model (equals bits r5) true) then "R5 "
+					else if matchBooleanEval (eval model (equals bits r6) true) then "R6 "
+					else if matchBooleanEval (eval model (equals bits r7) true) then "R7 "
+					else if matchBooleanEval (eval model (equals bits r8) true) then "R8 "
+					else if matchBooleanEval (eval model (equals bits r9) true) then "R9 "
+					else if matchBooleanEval (eval model (equals bits r10) true) then "R10"
+					else if matchBooleanEval (eval model (equals bits r11) true) then "R11"
+					else if matchBooleanEval (eval model (equals bits r12) true) then "R12"
+					else if matchBooleanEval (eval model (equals bits sp) true) then "SP "
+					else if matchBooleanEval (eval model (equals bits lr) true) then "LR "
+					else if matchBooleanEval (eval model (equals bits pc) true) then "PC "
+					else "No Register!" in 
+
+				let getRd instr =
+					getRegister (bitVecConcat (bitVecValue 0 1) (extract 15 12 instr)) in 
+
+				let getRn instr =
+					getRegister (bitVecConcat (bitVecValue 0 1) (extract 19 16 instr)) in 
+
+				let getRm instr = 
+					getRegister (bitVecConcat (bitVecValue 0 1) (extract 3 0 instr)) in 
+
+				let getRs instr = 
+					getRegister (bitVecConcat (bitVecValue 0 1) (extract 11 8 instr)) in 
+
+				let getShiftType instr =
+					let bits = extract 6 5 instr in 
+					if matchBooleanEval (eval model (equals bits bLSL) true) then "LSL" 
+					else if matchBooleanEval (eval model (equals bits bLSR) true) then "LSR"
+					else if matchBooleanEval (eval model (equals bits bASR) true) then "ASR"
+					else if matchBooleanEval (eval model (equals bits bROR) true) then "ROR"
+					else "No Barrel Shift!" in 
+
+				let isShiftedByRs instr =
+					let bits = extract 4 4 instr in 
+					matchBooleanEval (eval model (equals bits b1) true) in 
+
+				let getBitVecString bits =
+					let opt = eval model bits true in 
+					match opt with
+					| None -> "No Bit Vector!"
+					| Some(bitvec) -> BitVector.numeral_to_string bitvec in  
+
+				let getShiftAmount instr =
+					let bits = extract 11 7 instr in 
+					getBitVecString bits in 
+
+				let getImmValue instr = 
+					let bits = extract 7 0 instr in 
+					getBitVecString bits in 
+
+				let getImmRotateValue instr = 
+					let bits = extract 11 8 instr in 
+					getBitVecString bits in 
+
+				let instr = (select prog (intValue num)) in
+
+				let imm_used_bool = isImm_used instr in 
+				let shift_by_register_bool = isShiftedByRs instr in	
+
+				let oper_str = getOper instr in
+				let cond_str = getCond instr in 
+				let flag_set_str = getFlagSet instr in 
+
+				let rd_str = getRd instr in 
+				let rn_str = getRn instr in
+
+				let shift_type_str = getShiftType instr in 
+
+				let rm_str = getRm instr in  
+				let rs_str = getRs instr in
+				let shift_amount = getShiftAmount instr in 
+
+				let imm_str = getImmValue instr in 
+				let imm_rotate_str = getImmRotateValue instr in 
+ 
+				if imm_used_bool then 
+					Printf.printf "%s %s %s %s %s %s %s \n" oper_str cond_str flag_set_str rd_str rn_str imm_str imm_rotate_str
+				else
+				if shift_by_register_bool then
+					Printf.printf "%s %s %s %s %s %s %s %s \n" oper_str cond_str flag_set_str rd_str rn_str rm_str shift_type_str rs_str
+					else
+					Printf.printf "%s %s %s %s %s %s %s %s \n" oper_str cond_str flag_set_str rd_str rn_str rm_str shift_type_str shift_amount;
+					
+				instructionPrint model (num + 1) max in 
+			instructionPrint model 0 num in
+	instructionPrint model num;
 	Printf.printf "\nFinished\n";
 	exit 0
 
-let main = armConstraints 3
+let main = armConstraints 6
 
 (*
 	Use bitvectors for instructions V

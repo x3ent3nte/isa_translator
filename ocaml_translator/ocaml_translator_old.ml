@@ -154,7 +154,7 @@ let armConstraints num =
 			}::acc)
 		in 
 		initialiseProgram num [] in 
-(*
+	(*
 	let instruction = recordSort "Instruction" (symbol "Instruction") [
 		(symbol "operx"); (symbol "condx"); (symbol "flagx"); (symbol "rdx"); (symbol "rnx"); (symbol "rox"); 
 		(symbol "immx"); (symbol "imm_usedx"); (symbol "barrel_opx"); (symbol "barrel_numx");
