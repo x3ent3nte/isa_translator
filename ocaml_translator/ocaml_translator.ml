@@ -805,9 +805,7 @@ let printProgram model prog num =
 	for these.
 	Then a solver is created, the constraints are added to the solver, and the solver checks the satisfiability
 	If it is unsat then this is printed to the screen.
-	If it is sat then the generated program is printed to the screen
-
- *)
+	If it is sat then the generated program is printed to the screen *)
 let armConstraints num =
 	Printf.printf "\nGenerating ARM Constraints\n\n"; 
 
