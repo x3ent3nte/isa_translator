@@ -4,6 +4,7 @@ open Z3
 let config = [("model", "true"); ("proof", "false")]
 let context = Z3.mk_context config
 
+(* A bunch of helper functions to make calling the Z3 API easier *)
 let echo message = Printf.printf message ^ "\n" 
 
 let add x y = Arithmetic.mk_add context [x;y]
@@ -52,11 +53,19 @@ let checkSat solver = Solver.check solver []
 let getModel solver = Solver.get_model solver
 let eval model expr flag = Model.eval model expr flag
 
+(* These are some commonly used constants *)
+
 let int_sort = intSort ()
 let bool_sort = boolSort ()
 
+(* Commonly used bit vector values*)
+
 let b1 = bitVecValue 1 1
 let b0 = bitVecValue 0 1
+let zero_bv32 = bitVecValue 0 32
+let four_bv32 = bitVecValue 4 32
+
+(* The bit vector constants used to encode each op code. They have length 4 *)
 
 let opAND = bitVecValue 0 4
 let opEOR = bitVecValue 1 4
@@ -75,6 +84,8 @@ let opMOV = bitVecValue 13 4
 let opBIC = bitVecValue 14 4
 let opMVN = bitVecValue 15 4 
 
+(* The bit vector contants used to encode each condition code. They have length 4 *)
+
 let cEQ = bitVecValue 0 4
 let cNE = bitVecValue 1 4
 let cCS = bitVecValue 2 4
@@ -92,13 +103,22 @@ let cLE = bitVecValue 13 4
 let cAL = bitVecValue 14 4
 let cAL2 = bitVecValue 15 4
 
+(* The bit vector constants used to encode the flag set symbol. They have length 1
+fN means flags are not set
+fS means flag are set *)
+
 let fN = bitVecValue 0 1
 let fS = bitVecValue 1 1
+
+(* The bit vector constants used to encode the barrel operations. They have length 2 *)
 
 let bLSL = bitVecValue 0 2
 let bLSR = bitVecValue 1 2
 let bASR = bitVecValue 2 2
 let bROR = bitVecValue 3 2
+
+(* The bit vector constants used to encode the registers + the cpsr
+They have length 5. Arm registers are encoded by 4 bits but I used 5 bits for my encoding in order to make room for the cpsr *)
 
 let r0 =  bitVecValue 0 5 
 let r1 =  bitVecValue 1 5
@@ -118,11 +138,15 @@ let lr =  bitVecValue 14 5
 let pc =  bitVecValue 15 5 
 let cpsr = bitVecValue 16 5 
 
+(* A bunch of helper functions to help extract information from instructions and states*)
+
+(* These return expressions which will extract the value of the NZCV flags *)
 let flagN state = extract 31 31 (select state cpsr)
 let flagZ state = extract 30 30 (select state cpsr)
 let flagC state = extract 29 29 (select state cpsr)
 let flagV state = extract 28 28 (select state cpsr)
 
+(* These return a boolean expression which tests whether the NZCV are set to 1/0 *)
 let isN1 state = equals (flagN state) b1
 let isN0 state = equals (flagN state) b0
 let isZ1 state = equals (flagZ state) b1
@@ -132,16 +156,17 @@ let isC0 state = equals (flagC state) b0
 let isV1 state = equals (flagV state) b1
 let isV0 state = equals (flagV state) b0
 
+(* These return a boolean expression which tests whether a register value is postive/negative *)
 let isRegisterValPositive bitvec = equals (extract 31 31 bitvec) b0
 let isRegisterValNegative bitvec = equals (extract 31 31 bitvec) b1
 
+(* These return expressions that extract informaton from an intruction i.e. bit vector 32, such as the op code, condition code etc *)
 let getOper instr = extract 24 21 instr
 let getCond instr = extract 31 28 instr 
 let getFlagSet instr = extract 20 20 instr 
 
-let extractRd instr = bitVecConcat (bitVecValue 0 1) (extract 15 12 instr)
-let getRn instr = bitVecConcat (bitVecValue 0 1) (extract 19 16 instr)
 let getRd instr = bitVecConcat (bitVecValue 0 1) (extract 15 12 instr)
+let getRn instr = bitVecConcat (bitVecValue 0 1) (extract 19 16 instr)
 
 let getRm instr = bitVecConcat (bitVecValue 0 1) (extract 3 0 instr)
 let getRs instr = bitVecConcat (bitVecValue 0 1) (extract 11 8 instr)
@@ -154,64 +179,80 @@ let getImmValue instr = bitVecConcat (bitVecValue 0 24) (extract 7 0 instr)
 let getIsImmUsed instr = equals (extract 25 25 instr) b1
 let getImmRotate instr = bitVecShiftLeft (bitVecConcat (bitVecValue 0 28) (extract 11 8 instr)) (bitVecValue 1 32)
 
+(* state is an array sort indexed by bitvectors of size 5 (these encode the register names) 
+and stores bitvectors of size 32 (these encode the register values) *)
 let state = arraySort (bitVecSort 5) (bitVecSort 32)
+
+(* sequence is an array sort indexed by integers (this represents time i.e. 0 indexes the first state, 1 indexes the next state etc)
+It stores states, so represents the sequence of states that the program creates*)
 let sequence = arraySort int_sort state
 
+(* instruction is a bitvector of size 32 and encodes an arm instruction *)
 let instruction = (bitVecSort 32)
+
+(* program is an array sort indexed by integers (this represents time i.e. 
+0 indexes the first instruction, 2 indexes the next instruction etc)
+It stores instructions, and so represents the program *)
 let program = arraySort int_sort instruction
 
-let conditionTrue pre cond = 
+
+(* This function takes a state and returns an expression which is true if the NZCV flags meet the condition for execution *)
+let conditionTrue state cond = 
 	(or_log [
-		(and_log [(equals cond cEQ); isZ1 pre]);
-		(and_log [(equals cond cNE); isZ0 pre]);
-		(and_log [(equals cond cCS); isC1 pre]);
-		(and_log [(equals cond cCC); isC0 pre]);
-		(and_log [(equals cond cMI); isN1 pre]);
-		(and_log [(equals cond cPL); isN0 pre]);
-		(and_log [(equals cond cVS); isV1 pre]);
-		(and_log [(equals cond cVC); isV0 pre]);
+		(and_log [(equals cond cEQ); isZ1 state]);
+		(and_log [(equals cond cNE); isZ0 state]);
+		(and_log [(equals cond cCS); isC1 state]);
+		(and_log [(equals cond cCC); isC0 state]);
+		(and_log [(equals cond cMI); isN1 state]);
+		(and_log [(equals cond cPL); isN0 state]);
+		(and_log [(equals cond cVS); isV1 state]);
+		(and_log [(equals cond cVC); isV0 state]);
 		(and_log [
 			(equals cond cHI); 
 			(and_log [
-				isC1 pre;
-				isZ0 pre;
+				isC1 state;
+				isZ0 state;
 			])
 		]);
 		(and_log [
 			(equals cond cLS); 
 			(or_log [
-				isC0 pre;
-				isZ1 pre;
+				isC0 state;
+				isZ1 state;
 			])
 		]);
 		(and_log [
 			(equals cond cGE); 
-			(equals (isN1 pre) (isV1 pre))
+			(equals (isN1 state) (isV1 state))
 		]);
 		(and_log [
 			(equals cond cLT); 
-			(not_log (equals (isN1 pre) (isV1 pre)))
+			(not_log (equals (isN1 state) (isV1 state)))
 		]);
 		(and_log [ 
 			(equals cond cGT); 
 			(and_log [
-				isZ0 pre;
-				(equals (isN1 pre) (isV1 pre))
+				isZ0 state;
+				(equals (isN1 state) (isV1 state))
 			])
 		]);
 		(and_log [ 
 			(equals cond cLE); 
 			(and_log [
-				isZ1 pre;
-				(not_log (equals (isN1 pre) (isV1 pre)))
+				isZ1 state;
+				(not_log (equals (isN1 state) (isV1 state)))
 			])
 		]);
 		(equals cond cAL);
 		(equals cond cAL2)
 	]) 
 
-let conditionFalse pre cond = (not_log (conditionTrue pre cond))
+(* This function takes a state and returns an expression which is false if the NZCV flags meet the condition for execution *)
+let conditionFalse state cond = (not_log (conditionTrue state cond))
 
+(* This function takes a pre state and post state and returns an expression which is true if the register values from R0 to LR
+do not change between the states. Therfore the cpsr and program counter are allowed to change. This is used to constrain operations like CMP
+which can set flags but no not write the result to a destination register *)
 let r0ToLrEqual pre post =
 	(and_log [
 		(equals (select pre r0) (select post r0));
@@ -230,6 +271,10 @@ let r0ToLrEqual pre post =
 		(equals (select pre sp) (select post sp));
 		(equals (select pre lr) (select post lr));
 	])
+
+(* This function takes a pre state and post state and a destination register and returns an expression which is true if the register values
+from R0 to LR do not change between the states, unless it is the destination register. This is used to contrain operations like ADD and EOR
+which can set flags and write the result to a destination register, i.e. all the other registers have to be unchanged *)
 
 let r0ToLrEqualExcept pre post rd =
 	(and_log [
@@ -250,14 +295,23 @@ let r0ToLrEqualExcept pre post rd =
 		(or_log [(equals (select pre lr) (select post lr)); (equals rd lr)]);
 	])
 
+(* This function takes a sequence constant, a program constant and the program length and returns an expression which 
+constrains the state changes based on the instruction that connects them *)
 let generateContraints seq prog max =
 	let rec generateContraints seq prog num max constraints = 
+		(* if num = max then the program length has been reach and the function returns the constraints*)
 		if num = max then constraints 
 		else
+
+		(* We select the pre state and post state from the sequence array *)
+
 		let pre = select seq (intValue num) in
 		let post = select seq (intValue (num + 1)) in
 
+		(* We select the instruction that links the pre and post state *)
 		let instr = select prog (intValue num) in 
+
+		(* We then extract the necessary infomation ftom the instruction such as op code, condition code etc *)
 		let oper = getOper instr in 
 		let cond = getCond instr in 
 		let flag_set = getFlagSet instr in 
@@ -280,6 +334,10 @@ let generateContraints seq prog max =
 		let rm_val = select pre rm in 
 		let rs_val = select pre rs in 
 
+		(* flex_val is the value that Operand2 will evaluate to
+		This dependes on whether an immediate value was used and the rotation applied to the immediate value, 
+		or whether a register is used for Operand2, whether this register will be shifted by the value in another register, 
+		or an immediate value, and the type of shift applied e.g. LSR *)
 		let flex_val = 
 			ite (is_imm_used)
 				(bitVecRotateRight imm_val imm_rotate_num) 
@@ -311,86 +369,174 @@ let generateContraints seq prog max =
 						)
 					)
 				) in 
-
+		(* call these functions to get the expressions which constrain what it means for the condition for execution to be true
+		and the constraints on which registers must not change*)
 		let condition_true = conditionTrue pre cond in
 		let condition_false = conditionFalse pre cond in 
 		let r0_to_lr_equal = r0ToLrEqual pre post in 
 		let r0_to_lr_equal_except = r0ToLrEqualExcept pre post rd in 
 		
+		(* constr is the constraint that connects the pre and post states *)
 		let constr = (and_log [
-			(equals (bitVecAdd (select pre pc) (bitVecValue 4 32)) (select post pc));
+			(* assert that the program counter must increment by 4 *)
+			(equals (bitVecAdd (select pre pc) four_bv32) (select post pc));
+
+			(* There are two possibilities, either the condition is false, so the instruction is not executed,
+			or the condition is true, so the instruction is executed.
+			This OR clause has two AND clauses, and these represent these two possibilities *)
 			(or_log [
-				(and_log [condition_false; r0_to_lr_equal]);
+
+				(* If the condition for execution is false, then the registers and cpsr must be equal *)
+				(and_log [condition_false; r0_to_lr_equal; (equals (select pre cpsr) (select post cpsr))]);
+
+				(* Else, the condition for execution must be true *)
 				(and_log [
 					condition_true;
+
+					(* This OR clause contains two AND clauses.
+					The first AND clause constrains the comparision operations. i.e. operation that don't write to registers 
+					The second AND clause constrains operations that write to a destination register such as EOR, ADD, SUB*)
 					(or_log [
+
+						(* Constraints for Comparison operations*)
 						(and_log [
+
+							(* comparison operations do not change registers *)
 							r0_to_lr_equal;
+
+							(*Theye are cmp, cmn, tst ot teq*)
 							(or_log [
 								(equals oper opCMP);
 								(equals oper opCMN);
 								(equals oper opTST);
 								(equals oper opTEQ);
 							]);
+							(*This AND clause constrains the effect that these operations have on the state*)
 							(and_log [
+								(* For example this OR clause says that if the operation is CMP then that implies various contraints
+								on when flags are set
+								 *)
 								(or_log [
 									(not_log (equals oper opCMP));
+									(* so if the operation is CMP then this AND clause must be satisfied *)
 									(and_log [
-										(or_log [
-											(not_log (equals rn_val flex_val));
-											(isZ1 post)
+										(and_log [
+											(* if the rn_val = the flex_val i.e. rn_val - flex_val = 0
+											then the Z flag is 1 *)
+											(or_log [
+												(not_log (equals rn_val flex_val));
+												(isZ1 post)
+											]);
+											(* if the rn_val != flex_val i.e. rn_val - flex_val != 0
+											then the Z flag is 0 *)
+											(or_log [
+												(equals rn_val flex_val);
+												(isZ0 post)
+											])
 										]);
-										(or_log [
-											(equals rn_val flex_val);
-											(isZ0 post)
-										])
+										(* the AND clause constrains the setting of the N flag *)
+										(and_log [
+											(or_log [
+												(not_log (isRegisterValNegative (bitVecSub rn_val flex_val)));
+												(isN1 post)
+											]);
+											(or_log [
+												(isRegisterValNegative (bitVecSub rn_val flex_val));
+												(isN0 post)
+											])
+										]);
 									])
 								]);
 								(or_log [
 									(not_log (equals oper opCMN));
 									(and_log [
-										(or_log [
-											(not_log (equals (bitVecAdd rn_val flex_val) (bitVecValue 0 32)));
-											(isZ1 post)
+										(and_log [
+											(or_log [
+												(not_log (equals (bitVecAdd rn_val flex_val) zero_bv32));
+												(isZ1 post)
+											]);
+											(or_log [
+												(equals (bitVecAdd rn_val flex_val) zero_bv32);
+												(isZ0 post)
+											])
 										]);
-										(or_log [
-											(equals (bitVecAdd rn_val flex_val) (bitVecValue 0 32));
-											(isZ0 post)
-										])
+										(and_log [
+											(or_log [
+												(not_log (isRegisterValNegative (bitVecAdd rn_val flex_val)));
+												(isN1 post)
+											]);
+											(or_log [
+												(isRegisterValNegative (bitVecAdd rn_val flex_val));
+												(isN0 post)
+											])
+										]);
 									])
 								]);
 								(or_log [
 									(not_log (equals oper opTST));
 									(and_log [
-										(or_log [
-											(not_log (equals (bitVecAnd rn_val flex_val) (bitVecValue 0 32)));
-											(isZ1 post)
+										(and_log [
+											(or_log [
+												(not_log (equals (bitVecAnd rn_val flex_val) zero_bv32));
+												(isZ1 post)
+											]);
+											(or_log [
+												(equals (bitVecAnd rn_val flex_val) zero_bv32);
+												(isZ0 post)
+											])
 										]);
-										(or_log [
-											(equals (bitVecAnd rn_val flex_val) (bitVecValue 0 32));
-											(isZ0 post)
-										])
+										(and_log [
+											(or_log [
+												(not_log (isRegisterValNegative (bitVecAnd rn_val flex_val)));
+												(isN1 post)
+											]);
+											(or_log [
+												(isRegisterValNegative (bitVecAnd rn_val flex_val));
+												(isN0 post)
+											])
+										]);
 									])
 								]);
 								(or_log [
 									(not_log (equals oper opTEQ));
 									(and_log [
-										(or_log [
-											(not_log (equals (bitVecXor rn_val flex_val) (bitVecValue 0 32)));
-											(isZ1 post)
+										(and_log [
+											(or_log [
+												(not_log (equals (bitVecXor rn_val flex_val) zero_bv32));
+												(isZ1 post)
+											]);
+											(or_log [
+												(equals (bitVecXor rn_val flex_val) zero_bv32);
+												(isZ0 post)
+											])
 										]);
-										(or_log [
-											(equals (bitVecXor rn_val flex_val) (bitVecValue 0 32));
-											(isZ0 post)
-										])
+										(and_log [
+											(or_log [
+												(not_log (isRegisterValNegative (bitVecXor rn_val flex_val)));
+												(isN1 post)
+											]);
+											(or_log [
+												(isRegisterValNegative (bitVecXor rn_val flex_val));
+												(isN0 post)
+											])
+										]);
 									])
 								])
 
 							])
 						]);
+
+						(* Constraints for operations that write to a destination register *)
 						(and_log [
+							(* include constraint that all register from r0 to lr except the destination register cannot change *)
 							r0_to_lr_equal_except;
+
+							(* This OR clause contains two AND clauses
+							The first constrains operations MOV and MVN which take two arguments (i.e. no RN)
+							The second constrains operations like ADD and SUB which take three arguments (RD, RN and Operand 2) *)
 							(or_log [
+
+								(* Constraints for Operations that take two arguments *)
 								(and_log [
 									(or_log [
 										(equals oper opMOV); 
@@ -405,6 +551,8 @@ let generateContraints seq prog max =
 										(equals rd_val (bitVecNot flex_val) )
 									])
 								]);
+
+								(* Constraints for Operations that take three arguments*)
 								(and_log [
 									(or_log [
 										(equals oper opADD); 
@@ -445,27 +593,36 @@ let generateContraints seq prog max =
 									]);
 								])
 							]);
+
+							(* This OR clauses constrains the effect of flags being set or not *)
 							(or_log [
+
+								(* If the flags are not set then the cpsr cannot change *)
 								(and_log [
 									(equals flag_set fN);
 									(equals (select post cpsr) (select pre cpsr))
 								]);
+								(* If the flags are to be set then changes can happen *)
 								(and_log [
 									(equals flag_set fS);
+
+									(* If the value in rd is zero then Z flag is 1 else it is 0 *)
 									(and_log [
 										(or_log [
-										(not_log (equals rd_val (bitVecValue 0 32)));
-										isZ1 post
+											(not_log (equals rd_val zero_bv32));
+											isZ1 post
 										]);
 										(or_log [
-											(equals rd_val (bitVecValue 0 32));
+											(equals rd_val zero_bv32);
 											isZ0 post
 										])
 									]);
+
+									(* If the value in rd is negative (i.e. leading bit is 1) then N flag is 1 else it is 0 *)
 									(and_log [
 										(or_log [
-										(not_log (isRegisterValNegative rd_val));
-										isN1 post;
+											(not_log (isRegisterValNegative rd_val));
+											isN1 post;
 										]);
 										(or_log [
 											isRegisterValNegative rd_val;
@@ -480,10 +637,15 @@ let generateContraints seq prog max =
 			])
 			
 		]) in 
+
+		(* the constraint generated for this number is prepended to the list of constraints
+		and the function is recursively called for the next number *)
 		generateContraints seq prog (num + 1) max (constr::constraints)
 	in
 	generateContraints seq prog 0 max []
 
+(* The printProgram function is rather long and kludgy and is used to print 
+an assembly style representation of each instruction in the program *)
 let printProgram model prog num = 
 	let rec printProgram model prog num max =
 	if num < max then 
@@ -636,6 +798,16 @@ let printProgram model prog num =
 		printProgram model prog (num + 1) max in 
 	printProgram model prog 0 num
 
+
+
+(* armConstraints take a number, which is the number of instructions in the program.
+	It creates a sequence constant and a program constant and calls the function which creates constraints
+	for these.
+	Then a solver is created, the constraints are added to the solver, and the solver checks the satisfiability
+	If it is unsat then this is printed to the screen.
+	If it is sat then the generated program is printed to the screen
+
+ *)
 let armConstraints num =
 	Printf.printf "\nGenerating ARM Constraints\n\n"; 
 
@@ -644,18 +816,22 @@ let armConstraints num =
 
 	let constraints = generateContraints seq prog num in 
 	
+	(* more_constraints is used to add addition constraints for testing purposes *)
 	let more_constraints = [
 		(equals (select (select seq (intValue 0)) pc) (bitVecValue 4 32));
 		(equals (select (select seq (intValue 1)) pc) (bitVecValue 8 32));
+		(equals (select (select seq (intValue 10)) pc) (bitVecValue 44 32));
+
 		(equals (select (select seq (intValue 0)) r0) (bitVecValue 0 32));
 		(equals (select (select seq (intValue 0)) r1) (bitVecValue 2 32));
 		(equals (select (select seq (intValue 1)) r0) (bitVecValue 0 32));
 		(equals (select (select seq (intValue 1)) r1) (bitVecValue 2 32));
-		(equals (extract 24 21 (select prog (intValue 0))) opAND);
-		(equals (extract 31 28 (select prog (intValue 0))) cEQ);
-		(equals (extract 31 31 (select (select seq (intValue 0)) cpsr)) b1);
-		(equals (extract 31 31 (select (select seq (intValue 1)) cpsr)) b0);
-		(equals (select (select seq (intValue 10)) pc) (bitVecValue 44 32));
+
+		(equals (getOper (select prog (intValue 0))) opCMP);
+		(equals (getCond (select prog (intValue 0))) cEQ);
+
+		(isN1 (select seq (intValue 0)));
+		(isN0 (select seq (intValue 1)));
 		] in
 
 	let solver = Solver.mk_solver context None in
@@ -676,7 +852,9 @@ let armConstraints num =
 		printProgram model prog num;
 		Printf.printf "\nFinished\n"
 
-let main = armConstraints 4
+
+(* this line gets the program doing stuff *)
+let main = armConstraints 10
 
 (*
 	TODO
