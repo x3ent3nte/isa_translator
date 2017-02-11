@@ -58,7 +58,7 @@ let eval model expr flag = Model.eval model expr flag
 let int_sort = intSort ()
 let bool_sort = boolSort ()
 
-(* Commonly used bit vector values*)
+(* Commonly used bit vector values *)
 
 let b1 = bitVecValue 1 1
 let b0 = bitVecValue 0 1
@@ -190,10 +190,10 @@ let sequence = arraySort int_sort state
 (* instruction is a bitvector of size 32 and encodes an arm instruction *)
 let instruction = (bitVecSort 32)
 
-(* program is an array sort indexed by integers (this represents time i.e. 
-0 indexes the first instruction, 2 indexes the next instruction etc)
-It stores instructions, and so represents the program *)
-let program = arraySort int_sort instruction
+(* program is an array sort indexed by bitvector 32 
+This represents the address of the instruction and the value of a 
+states program counter is the index of instruction that will be performed *)
+let program = arraySort (bitVecSort 32) instruction
 
 
 (* This function takes a state and returns an expression which is true if the NZCV flags meet the condition for execution *)
@@ -309,7 +309,7 @@ let generateContraints seq prog max =
 		let post = select seq (intValue (num + 1)) in
 
 		(* We select the instruction that links the pre and post state *)
-		let instr = select prog (intValue num) in 
+		let instr = select prog (select pre pc) in 
 
 		(* We then extract the necessary infomation ftom the instruction such as op code, condition code etc *)
 		let oper = getOper instr in 
@@ -766,7 +766,7 @@ let printProgram model prog num =
 			let bits = getImmRotate instr in 
 			getBitVecStr bits in 
 
-		let instr = (select prog (intValue num)) in
+		let instr = (select prog (bitVecValue (num * 4) 32)) in
 
 		let imm_used_bool = getImmUsed instr in 
 		let shift_by_register_bool = isShiftedByRs instr in	
@@ -800,11 +800,11 @@ let printProgram model prog num =
 
 
 
-(* armConstraints take a number, which is the number of instructions in the program.
+(* armConstraints take an integer, which is the number of instructions in the program.
 	It creates a sequence constant and a program constant and calls the function which creates constraints
 	for these.
 	Then a solver is created, the constraints are added to the solver, and the solver checks the satisfiability
-	If it is unsat then this is printed to the screen.
+	If it is unsat then UNSAT this is printed to the screen.
 	If it is sat then the generated program is printed to the screen *)
 let armConstraints num =
 	Printf.printf "\nGenerating ARM Constraints\n\n"; 
@@ -816,8 +816,8 @@ let armConstraints num =
 	
 	(* more_constraints is used to add addition constraints for testing purposes *)
 	let more_constraints = [
-		(equals (select (select seq (intValue 0)) pc) (bitVecValue 4 32));
-		(equals (select (select seq (intValue 1)) pc) (bitVecValue 8 32));
+		(equals (select (select seq (intValue 0)) pc) (bitVecValue 0 32));
+		(equals (select (select seq (intValue 1)) pc) (bitVecValue 4 32));
 		(equals (select (select seq (intValue 10)) pc) (bitVecValue 44 32));
 
 		(equals (select (select seq (intValue 0)) r0) (bitVecValue 0 32));
@@ -825,8 +825,10 @@ let armConstraints num =
 		(equals (select (select seq (intValue 1)) r0) (bitVecValue 0 32));
 		(equals (select (select seq (intValue 1)) r1) (bitVecValue 2 32));
 
-		(equals (getOper (select prog (intValue 0))) opCMP);
-		(equals (getCond (select prog (intValue 0))) cEQ);
+		(equals (getOper (select prog (bitVecValue 0 32))) opTEQ);
+		(equals (getCond (select prog (bitVecValue 0 32))) cEQ);
+		(equals (getOper (select prog (bitVecValue 4 32))) opMOV);
+		(equals (getCond (select prog (bitVecValue 4 32))) cNE);
 
 		(isN1 (select seq (intValue 0)));
 		(isN0 (select seq (intValue 1)));
@@ -851,8 +853,8 @@ let armConstraints num =
 		Printf.printf "\nFinished\n"
 
 
-(* this line gets the program doing stuff *)
-let main = armConstraints 10
+(* this line makes the program do stuff *)
+let main = armConstraints 7
 
 (*
 	TODO
@@ -864,6 +866,8 @@ let main = armConstraints 10
 	forall/exists quantifiers
 	overflow/carry flag setting
 	print out only rn and op2 for 2 register operations
+
+	Use bitvec 32 for instruction indexing to enable branching V
 *)
 
 
