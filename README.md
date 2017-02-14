@@ -38,7 +38,7 @@ This is a python file that uses the python z3 api. The python z3 api is much eas
 So if you are not locked into using the ocaml/c++ api I recommend python (although maybe this comes at a price, perhaps the python api is not as flexible).
 
 ####generator.py
-This just writes a whole load of smt constraints to a file called proto_gen.smt2. 
+This writes smt constraints to a file called proto_gen.smt2. 
 It's not pretty and you should probably just ignore these.
 
 ### prolog contains:
